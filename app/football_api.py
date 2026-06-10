@@ -39,7 +39,9 @@ def sync(db):
         ko = m.get("utcDate")
         kdt = None
         if ko:
-            try: kdt = datetime.datetime.fromisoformat(ko.replace("Z","+00:00"))
+            try:
+                kdt = datetime.datetime.fromisoformat(ko.replace("Z","+00:00"))
+                kdt = kdt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
             except Exception: pass
         ext = str(m.get("id"))
         row = db.query(Match).filter(Match.ext_id == ext).first()

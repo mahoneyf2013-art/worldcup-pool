@@ -174,6 +174,57 @@ def compute_group_tables(db):
 def group_standings(db: Session = Depends(get_db)):
     return compute_group_tables(db)
 
+# ---------- automatic, match-aware background sync ----------
+import threading, time
+
+def _active_window(db):
+    """True if any match is live, or within (-2h .. +3h) of kickoff -> poll fast."""
+    now = datetime.datetime.utcnow()
+    for m in db.query(Match).all():
+        if m.status == "LIVE":
+            return True
+        if m.kickoff and m.status != "FINISHED":
+            ko = m.kickoff.replace(tzinfo=None) if m.kickoff.tzinfo else m.kickoff
+            if ko - datetime.timedelta(hours=2) <= now <= ko + datetime.timedelta(hours=3):
+                return True
+    return False
+
+def _seconds_until_window(db):
+    """Seconds until the next match window opens (kickoff - 2h). None if no future matches."""
+    now = datetime.datetime.utcnow()
+    best = None
+    for m in db.query(Match).all():
+        if m.kickoff and m.status != "FINISHED":
+            ko = m.kickoff.replace(tzinfo=None) if m.kickoff.tzinfo else m.kickoff
+            start = ko - datetime.timedelta(hours=2)
+            if start > now:
+                d = (start - now).total_seconds()
+                best = d if best is None else min(best, d)
+    return best
+
+def _auto_sync_loop():
+    poll_min = int(os.environ.get("WINDOW_POLL_MIN", "30"))   # during match windows
+    while True:
+        wait = 3600
+        try:
+            db = SessionLocal()
+            if _active_window(db):
+                football_api.sync(db)                          # only call the API in a window
+                wait = poll_min * 60
+            else:
+                nxt = _seconds_until_window(db)                # no API call outside windows
+                wait = min(nxt, 3600) if nxt is not None else 3600
+            db.close()
+        except Exception:
+            wait = 600
+        time.sleep(max(60, wait))
+
+@app.on_event("startup")
+def _start_auto_sync():
+    # only if an API key is configured and auto-sync isn't disabled
+    if os.environ.get("FOOTBALL_API_KEY") and os.environ.get("AUTO_SYNC", "1") != "0":
+        threading.Thread(target=_auto_sync_loop, daemon=True).start()
+
 # ---------- serve the static frontend (single Railway service) ----------
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
 app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
