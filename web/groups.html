@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>World Cup Pool — Groups</title><link rel="stylesheet" href="styles.css">
+<style>
+.groups-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.gtitle{font-weight:800;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;display:flex;justify-content:space-between}
+.gtitle .tag{font-size:10px;color:var(--mut);font-weight:700}
+table.gt{font-size:13px}
+table.gt th{font-size:10px;color:var(--mut);text-transform:uppercase;font-weight:700;padding:6px 4px;text-align:center}
+table.gt td{padding:6px 4px;text-align:center;border-top:1px solid var(--line)}
+table.gt td.tn{text-align:left;font-weight:600}
+table.gt th.tn{text-align:left;padding-left:14px}
+table.gt td.tn{padding-left:14px}
+tr.adv td{background:rgba(34,197,94,.08)}
+tr.third td{background:rgba(245,197,66,.07)}
+.pos{font-weight:800;color:var(--mut);width:18px}
+tr.adv .pos{color:var(--acc)} tr.third .pos{color:var(--gold)}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--mut);margin:6px 0 16px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle;margin-right:5px}
+</style></head>
+<body><div id="nav"></div><div class="wrap">
+<h1>Groups</h1><div class="sub">Top 2 of each group advance, plus the 8 best 3rd-placed teams.</div>
+<div class="legend"><span><span class="dot" style="background:var(--acc)"></span>Advancing (top 2)</span>
+<span><span class="dot" style="background:var(--gold)"></span>3rd — in best-8 race</span></div>
+<div id="grid" class="groups-grid"></div>
+<div class="sec">Best 3rd-placed teams (8 advance)</div>
+<div id="thirds" class="card"></div>
+<div class="sub" style="margin-top:14px">Standings order: points, then goal difference, then goals for. (Official FIFA tiebreakers also use head-to-head; final placings may differ.) Pool points ignore goals — goals only decide group placement.</div>
+</div>
+<script src="app.js"></script><script>
+document.getElementById("nav").innerHTML = navbar("groups");
+function gtable(letter, t){
+  const head=`<tr><th class="tn">${''}</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;
+  const rows=t.rows.map(r=>{
+    const cls=r.advancing?'adv':(r.pos===3?'third':'');
+    const gd=(r.gd>0?'+':'')+r.gd;
+    return `<tr class="${cls}"><td class="tn"><span class="pos">${r.pos}</span> ${r.team}</td>
+      <td>${r.played}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${gd}</td><td><b>${r.pts}</b></td></tr>`;
+  }).join("");
+  return `<div class="card"><div class="gtitle">Group ${letter}<span class="tag">${t.complete?'FINAL':'in progress'}</span></div>
+    <table class="gt"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+async function load(){
+  let d; try{ d=await api("/api/group-standings"); }catch(e){ document.getElementById("grid").innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  document.getElementById("grid").innerHTML = Object.keys(d.groups).sort().map(g=>gtable(g,d.groups[g])).join("");
+  const th=d.thirds.map(r=>{
+    const gd=(r.gd>0?'+':'')+r.gd;
+    return `<div class="match ${r.qualified?'':''}" style="${r.qualified?'':'opacity:.55'}">
+      <div class="rnd">${r.qualified?'IN':'OUT'}</div>
+      <div class="mt"><div class="mteams">${r.third_rank}. ${r.team} <span class="muted">(Group ${r.group})</span></div>
+      <div class="mtime">${r.played} played · GD ${gd}</div></div>
+      <span class="score">${r.pts}<small class="muted"> pts</small></span></div>`;
+  }).join("") || `<div class="empty">No group results yet.</div>`;
+  document.getElementById("thirds").innerHTML = th;
+}
+load();
+</script></body></html>

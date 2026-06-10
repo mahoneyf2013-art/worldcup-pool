@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>World Cup Pool — Admin</title><link rel="stylesheet" href="styles.css"></head>
+<body><div id="nav"></div><div class="wrap">
+<h1>Admin</h1><div class="sub">Enter each person's drafted countries and update results. No login required.</div>
+<div class="adminbar">
+  <label>Admin key (only if you set one)</label>
+  <input id="key" placeholder="optional" style="width:160px">
+  <button class="ghost" onclick="saveKey()">Save key</button>
+  <button class="ghost" onclick="sync()">Sync from API</button>
+  <span id="msg" class="muted"></span>
+</div>
+
+<div class="sec">Players & picks</div>
+<div class="adminbar">
+  <input id="pname" placeholder="New player name">
+  <button onclick="addPlayer()">Add player</button>
+</div>
+<div id="players"></div>
+
+<div class="sec">Match results</div>
+<div class="adminbar">
+  <label>Round</label>
+  <select id="roundfilter" onchange="renderMatches()"></select>
+  <span class="muted">Editing a match marks it manual (API sync won't overwrite it).</span>
+</div>
+<div id="matches" class="card"></div>
+</div>
+<script src="app.js"></script><script>
+document.getElementById("nav").innerHTML = navbar("admin");
+document.getElementById("key").value = adminKey();
+let GROUPS={}, TEAMS=[], MATCHES=[];
+function saveKey(){ localStorage.setItem("adminKey",document.getElementById("key").value.trim()); flash("Key saved"); }
+function flash(m){ const e=document.getElementById("msg"); e.textContent=m; setTimeout(()=>e.textContent="",2500); }
+
+async function sync(){ try{ const r=await api("/api/sync",{method:"POST"}); flash(r.ok?`Synced (${r.updated} updated, ${r.created} new)`:r.msg);}catch(e){flash(e.message);} await loadMatches(); }
+
+// ---- players ----
+async function addPlayer(){ const n=document.getElementById("pname").value.trim(); if(!n)return;
+  try{ await api("/api/players",{method:"POST",body:JSON.stringify({name:n})}); document.getElementById("pname").value=""; loadPlayers(); }catch(e){flash(e.message);} }
+async function delPlayer(id){ if(!confirm("Remove this player?"))return; await api("/api/players/"+id,{method:"DELETE"}); loadPlayers(); }
+async function savePicks(id){
+  const sels=[...document.querySelectorAll(`[data-pl='${id}'] select`)].map(s=>s.value).filter(Boolean);
+  const uniq=[...new Set(sels)];
+  try{ await api("/api/players/"+id+"/picks",{method:"PUT",body:JSON.stringify({teams:uniq})}); flash("Picks saved"); }catch(e){flash(e.message);}
+}
+function teamOptions(sel){ return `<option value="">— team —</option>`+TEAMS.map(t=>`<option ${t===sel?'selected':''}>${t}</option>`).join(""); }
+async function loadPlayers(){
+  const s=await api("/api/standings"); const wrap=document.getElementById("players"); wrap.innerHTML="";
+  if(!s.length){ wrap.innerHTML=`<div class="muted">No players yet.</div>`; }
+  s.forEach(p=>{
+    const card=el("div","card"); card.setAttribute("data-pl",p.id);
+    const picks=p.teams.map(t=>t.team);
+    const slots=8; let rows="";
+    for(let i=0;i<slots;i++) rows+=`<select>${teamOptions(picks[i]||"")}</select>`;
+    card.innerHTML=`<div class="row" style="cursor:default"><div class="name">${p.name}</div>
+      <button onclick="savePicks(${p.id})">Save picks</button>
+      <button class="ghost" onclick="delPlayer(${p.id})">✕</button></div>
+      <div style="padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">${rows}</div>`;
+    wrap.appendChild(card);
+  });
+}
+// ---- matches ----
+function mEdit(m){
+  const t=(m.round==='group');
+  const teamInputs = t
+    ? `<span class="tn">${m.team_a} vs ${m.team_b}</span>`
+    : `<select data-f="team_a">${teamOptions(m.team_a||"")}</select><span>vs</span><select data-f="team_b">${teamOptions(m.team_b||"")}</select>`;
+  return `<div class="match" data-m="${m.id}">
+    <div class="rnd">${m.round==='group'?'GRP '+(m.grp||''):m.round}</div>
+    <div class="mt" style="flex-direction:row;gap:8px;align-items:center;flex-wrap:wrap">${teamInputs}
+      <input data-f="score_a" type="number" min="0" style="width:52px" value="${m.score_a??''}" placeholder="–">
+      <input data-f="score_b" type="number" min="0" style="width:52px" value="${m.score_b??''}" placeholder="–">
+      <select data-f="status"><option ${m.status==='SCHEDULED'?'selected':''}>SCHEDULED</option>
+        <option ${m.status==='LIVE'?'selected':''}>LIVE</option><option ${m.status==='FINISHED'?'selected':''}>FINISHED</option></select>
+      ${m.round!=='group'?`<select data-f="winner"><option value="">winner (pens)</option>
+        <option ${m.winner===m.team_a?'selected':''}>${m.team_a||''}</option>
+        <option ${m.winner===m.team_b?'selected':''}>${m.team_b||''}</option></select>`:''}
+    </div>
+    <button onclick="saveMatch(${m.id})">Save</button></div>`;
+}
+async function saveMatch(id){
+  const root=document.querySelector(`[data-m='${id}']`); const body={};
+  root.querySelectorAll("[data-f]").forEach(inp=>{ let v=inp.value; if(v==="")return;
+    if(inp.dataset.f==="score_a"||inp.dataset.f==="score_b")v=parseInt(v); body[inp.dataset.f]=v; });
+  try{ await api("/api/matches/"+id,{method:"PUT",body:JSON.stringify(body)}); flash("Match saved"); }catch(e){flash(e.message);}
+}
+function renderMatches(){
+  const rf=document.getElementById("roundfilter").value;
+  document.getElementById("matches").innerHTML = MATCHES.filter(m=>rf==="all"||m.round===rf).map(mEdit).join("")||`<div class="empty">None</div>`;
+}
+async function loadMatches(){
+  MATCHES=await api("/api/schedule");
+  const rounds=["all","group","R32","R16","QF","SF","3rd","Final"];
+  document.getElementById("roundfilter").innerHTML=rounds.map(r=>`<option value="${r}">${r==='all'?'All rounds':r}</option>`).join("");
+  renderMatches();
+}
+async function boot(){ GROUPS=await api("/api/groups"); TEAMS=Object.values(GROUPS).flat().sort();
+  await loadPlayers(); await loadMatches(); }
+boot();
+</script></body></html>

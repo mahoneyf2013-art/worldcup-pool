@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>World Cup Pool — Schedule</title><link rel="stylesheet" href="styles.css"></head>
+<body><div id="nav"></div><div class="wrap">
+<h1>Schedule</h1><div class="sub">Live, upcoming and completed matches.</div>
+<div id="live"></div><div id="upcoming"></div><div id="done"></div>
+</div>
+<script src="app.js"></script><script>
+document.getElementById("nav").innerHTML = navbar("schedule");
+function matchRow(m){
+  const teams = (m.team_a||"TBD")+"  vs  "+(m.team_b||"TBD");
+  const right = m.status==="SCHEDULED"
+     ? `<span class="badge b-SCHEDULED">${m.round==='group'?'Group '+(m.grp||''):m.round}</span>`
+     : `<span class="score">${m.score_a??""}–${m.score_b??""}</span> <span class="badge b-${m.status}">${m.status}</span>`;
+  const sub = m.status==="SCHEDULED" ? fmtDate(m.kickoff)
+     : (m.round==='group'?'Group '+(m.grp||''):m.round)+(m.winner?` · ${m.winner} advance`:"");
+  return `<div class="match"><div class="rnd">${m.round==='group'?'GRP':m.round}</div>
+    <div class="mt"><div class="mteams">${teams}</div><div class="mtime">${sub}</div></div>${right}</div>`;
+}
+function section(title,list){ if(!list.length) return "";
+  return `<div class="sec">${title}</div><div class="card">${list.map(matchRow).join("")}</div>`; }
+async function load(){
+  let s; try{ s=await api("/api/schedule"); }catch(e){ document.getElementById("upcoming").innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  const live=s.filter(m=>m.status==="LIVE");
+  const up=s.filter(m=>m.status==="SCHEDULED");
+  const done=s.filter(m=>m.status==="FINISHED").reverse();
+  document.getElementById("live").innerHTML=section("● Live now",live);
+  document.getElementById("upcoming").innerHTML=section("Upcoming",up.slice(0,40));
+  document.getElementById("done").innerHTML=section("Completed",done.slice(0,60));
+}
+load();
+</script></body></html>

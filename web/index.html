@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css"></head>
+<body><div id="nav"></div><div class="wrap">
+<h1>Standings</h1><div class="sub">Tap a player to see their teams and how each one scored.</div>
+<div id="board" class="card"><div class="empty">Loading…</div></div>
+<div class="sub" style="margin-top:18px">Scoring: 3 pts win · 1 pt draw · +4 for each knockout round a team reaches (R32, R16, QF, SF, Final, Champion).</div>
+</div>
+<script src="app.js"></script><script>
+document.getElementById("nav").innerHTML = navbar("standings");
+async function load(){
+  const board=document.getElementById("board");
+  let s; try{ s=await api("/api/standings"); }catch(e){ board.innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  if(!s.length){ board.innerHTML=`<div class="empty">No players yet. Add them on the Admin page.</div>`; return; }
+  board.innerHTML="";
+  s.forEach(p=>{
+    const row=el("div","row");
+    row.innerHTML=`<div class="rank ${p.rank===1?'r1':''}">${p.rank}</div>
+      <div class="name">${p.name}</div><div class="pts">${p.total}<small> pts</small></div>`;
+    const det=el("div","detail");
+    if(!p.teams.length){ det.innerHTML=`<div class="muted" style="padding:8px 0">No teams drafted yet.</div>`; }
+    p.teams.forEach(t=>{
+      const chips=(t.breakdown||[]).map(b=>`<span class="chip">${b.label} <b>+${b.points}</b></span>`).join("");
+      det.appendChild(el("div","team",
+        `<div class="tn">${t.team}</div><div style="flex:2">${chips?`<div class="chips">${chips}</div>`:`<span class="muted">No points yet</span>`}</div><div class="tp">${t.points}</div>`));
+    });
+    row.onclick=()=>det.classList.toggle("open");
+    board.appendChild(row); board.appendChild(det);
+  });
+}
+load();
+</script></body></html>
