@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Groups</title><link rel="stylesheet" href="styles.css">
+<title>World Cup Pool — Groups</title><link rel="stylesheet" href="styles.css?v=2">
 <style>
 .groups-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .gtitle{font-weight:800;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;display:flex;justify-content:space-between}
@@ -27,7 +27,7 @@ tr.adv .pos{color:var(--acc)} tr.third .pos{color:var(--gold)}
 <div id="thirds" class="card"></div>
 <div class="sub" style="margin-top:14px">Standings order: points, then goal difference, then goals for. (Official FIFA tiebreakers also use head-to-head; final placings may differ.) Pool points ignore goals — goals only decide group placement.</div>
 </div>
-<script src="app.js"></script><script>
+<script src="app.js?v=2"></script><script>
 document.getElementById("nav").innerHTML = navbar("groups");
 function gtable(letter, t){
   const head=`<tr><th class="tn">${''}</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;

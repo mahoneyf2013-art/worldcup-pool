@@ -1,12 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css"></head>
+<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=2"></head>
 <body><div id="nav"></div><div class="wrap">
 <h1>Standings</h1><div class="sub">Tap a player to see their teams and how each one scored.</div>
 <div id="board" class="card"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:18px">Scoring: 3 pts win · 1 pt draw · +4 for each knockout round a team reaches (R32, R16, QF, SF, Final, Champion).</div>
 </div>
-<script src="app.js"></script><script>
+<script src="app.js?v=2"></script><script>
 document.getElementById("nav").innerHTML = navbar("standings");
 async function load(){
   const board=document.getElementById("board");
