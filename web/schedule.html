@@ -7,15 +7,23 @@
 </div>
 <script src="app.js"></script><script>
 document.getElementById("nav").innerHTML = navbar("schedule");
+function teamLine(team, owner, score, win){
+  return `<div class="tline${win?' win':''}">${teamLabel(team,owner)}<span class="sc">${score??""}</span></div>`;
+}
 function matchRow(m){
-  const teams = (m.team_a||"TBD")+"  vs  "+(m.team_b||"TBD");
-  const right = m.status==="SCHEDULED"
-     ? `<span class="badge b-SCHEDULED">${m.round==='group'?'Group '+(m.grp||''):m.round}</span>`
-     : `<span class="score">${m.score_a??""}–${m.score_b??""}</span> <span class="badge b-${m.status}">${m.status}</span>`;
-  const sub = m.status==="SCHEDULED" ? fmtDate(m.kickoff)
-     : (m.round==='group'?'Group '+(m.grp||''):m.round)+(m.winner?` · ${m.winner} advance`:"");
-  return `<div class="match"><div class="rnd">${m.round==='group'?'GRP':m.round}</div>
-    <div class="mt"><div class="mteams">${teams}</div><div class="mtime">${sub}</div></div>${right}</div>`;
+  const finished=m.status==="FINISHED", live=m.status==="LIVE", showScore=finished||live;
+  const wa = m.winner ? m.winner===m.team_a : (finished && m.score_a>m.score_b);
+  const wb = m.winner ? m.winner===m.team_b : (finished && m.score_b>m.score_a);
+  const badge = live ? `<span class="badge b-LIVE">LIVE</span>`
+     : finished ? `<span class="badge b-FINISHED">FT</span>`
+     : `<span class="badge b-SCHEDULED">${m.round==='group'?'Group '+(m.grp||''):m.round}</span>`;
+  const tv = m.network ? `<span class="tv">${m.network}</span>` : "";
+  return `<div class="match smatch"><div class="rnd">${m.round==='group'?'GRP'+(m.grp?' '+m.grp:''):m.round}</div>
+    <div class="mt">
+      ${teamLine(m.team_a,m.owner_a,showScore?m.score_a:null,wa)}
+      ${teamLine(m.team_b,m.owner_b,showScore?m.score_b:null,wb)}
+      <div class="mtime">${etTime(m.kickoff)}${tv}</div>
+    </div><div class="mbadge">${badge}</div></div>`;
 }
 function section(title,list){ if(!list.length) return "";
   return `<div class="sec">${title}</div><div class="card">${list.map(matchRow).join("")}</div>`; }

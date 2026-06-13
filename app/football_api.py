@@ -17,7 +17,9 @@ def _n(name):
     return NAME.get(name, name) if name else name
 
 def sync(db):
-    key = os.environ.get("FOOTBALL_API_KEY")
+    # .strip() guards against keys pasted with a stray leading/trailing tab,
+    # space or newline — those produce httpx "Illegal header value" errors.
+    key = (os.environ.get("FOOTBALL_API_KEY") or "").strip()
     if not key:
         return {"ok": False, "msg": "FOOTBALL_API_KEY not set; use manual entry."}
     try:

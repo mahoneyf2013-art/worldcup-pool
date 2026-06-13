@@ -22,7 +22,7 @@ async function load(){
     p.teams.forEach(t=>{
       const chips=(t.breakdown||[]).map(b=>`<span class="chip">${b.label} <b>+${b.points}</b></span>`).join("");
       det.appendChild(el("div","team",
-        `<div class="tn">${t.team}</div><div style="flex:2">${chips?`<div class="chips">${chips}</div>`:`<span class="muted">No points yet</span>`}</div><div class="tp">${t.points}</div>`));
+        `<div class="tn">${flag(t.team)}<span class="cname">${t.team}</span></div><div style="flex:2">${chips?`<div class="chips">${chips}</div>`:`<span class="muted">No points yet</span>`}</div><div class="tp">${t.points}</div>`));
     });
     row.onclick=()=>det.classList.toggle("open");
     board.appendChild(row); board.appendChild(det);

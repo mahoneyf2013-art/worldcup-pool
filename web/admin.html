@@ -33,7 +33,7 @@ let GROUPS={}, TEAMS=[], MATCHES=[];
 function saveKey(){ localStorage.setItem("adminKey",document.getElementById("key").value.trim()); flash("Key saved"); }
 function flash(m){ const e=document.getElementById("msg"); e.textContent=m; setTimeout(()=>e.textContent="",2500); }
 
-async function sync(){ try{ const r=await api("/api/sync",{method:"POST"}); flash(r.ok?`Synced (${r.updated} updated, ${r.created} new)`:r.msg);}catch(e){flash(e.message);} await loadMatches(); }
+async function sync(){ try{ const r=await api("/api/sync",{method:"POST"}); flash(r.msg || (r.ok?`Synced (${r.updated} updated)`:"Sync failed"));}catch(e){flash(e.message);} await loadMatches(); }
 
 // ---- players ----
 async function addPlayer(){ const n=document.getElementById("pname").value.trim(); if(!n)return;
@@ -64,7 +64,7 @@ async function loadPlayers(){
 function mEdit(m){
   const t=(m.round==='group');
   const teamInputs = t
-    ? `<span class="tn">${m.team_a} vs ${m.team_b}</span>`
+    ? `<span class="tn">${flag(m.team_a)}${m.team_a} vs ${flag(m.team_b)}${m.team_b}</span>`
     : `<select data-f="team_a">${teamOptions(m.team_a||"")}</select><span>vs</span><select data-f="team_b">${teamOptions(m.team_b||"")}</select>`;
   return `<div class="match" data-m="${m.id}">
     <div class="rnd">${m.round==='group'?'GRP '+(m.grp||''):m.round}</div>

@@ -34,7 +34,7 @@ function gtable(letter, t){
   const rows=t.rows.map(r=>{
     const cls=r.advancing?'adv':(r.pos===3?'third':'');
     const gd=(r.gd>0?'+':'')+r.gd;
-    return `<tr class="${cls}"><td class="tn"><span class="pos">${r.pos}</span> ${r.team}</td>
+    return `<tr class="${cls}"><td class="tn"><span class="pos">${r.pos}</span> ${flag(r.team)}<span class="cname">${r.team}</span>${r.owner?`<div class="gowner">${r.owner}</div>`:""}</td>
       <td>${r.played}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${gd}</td><td><b>${r.pts}</b></td></tr>`;
   }).join("");
   return `<div class="card"><div class="gtitle">Group ${letter}<span class="tag">${t.complete?'FINAL':'in progress'}</span></div>
@@ -47,7 +47,7 @@ async function load(){
     const gd=(r.gd>0?'+':'')+r.gd;
     return `<div class="match ${r.qualified?'':''}" style="${r.qualified?'':'opacity:.55'}">
       <div class="rnd">${r.qualified?'IN':'OUT'}</div>
-      <div class="mt"><div class="mteams">${r.third_rank}. ${r.team} <span class="muted">(Group ${r.group})</span></div>
+      <div class="mt"><div class="mteams">${r.third_rank}. ${flag(r.team)}<span class="cname">${r.team}</span>${ownerBadge(r.owner)} <span class="muted">(Group ${r.group})</span></div>
       <div class="mtime">${r.played} played · GD ${gd}</div></div>
       <span class="score">${r.pts}<small class="muted"> pts</small></span></div>`;
   }).join("") || `<div class="empty">No group results yet.</div>`;
