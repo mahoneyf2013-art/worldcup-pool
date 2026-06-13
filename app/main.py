@@ -45,6 +45,30 @@ def seed_if_empty():
         db.close()
 seed_if_empty()
 
+def _repair_matches():
+    """One-time cleanup. An earlier second sync source (football-data) created
+    duplicate fixtures. The canonical set is exactly the 72 group fixtures + the
+    32 knockout slots; trim anything beyond that, keeping the real rows."""
+    import collections
+    db = SessionLocal()
+    try:
+        # genuine group rows always carry a group letter; null-grp rows are strays
+        db.query(Match).filter(Match.round == "group", Match.grp.is_(None)).delete(synchronize_session=False)
+        want = collections.Counter(r for _, r in seed_data.KO_SKELETON)   # {R32:16, R16:8, ...}
+        for rnd, n in want.items():
+            rows = db.query(Match).filter(Match.round == rnd).all()
+            if len(rows) > n:
+                # keep the n most "real": manual edits > has teams > has TV > earliest id
+                ranked = sorted(rows, key=lambda m: (bool(m.manual), bool(m.team_a), bool(m.network), -m.id), reverse=True)
+                keep = {m.id for m in ranked[:n]}
+                for m in rows:
+                    if m.id not in keep:
+                        db.delete(m)
+        db.commit()
+    finally:
+        db.close()
+_repair_matches()
+
 def _matches(db):
     return [dict(id=m.id, round=m.round, grp=m.grp, team_a=m.team_a, team_b=m.team_b,
                  score_a=m.score_a, score_b=m.score_b, winner=m.winner, status=m.status,
@@ -165,21 +189,14 @@ def update_match(mid:int, body:MatchIn, db: Session = Depends(get_db)):
 
 @app.post("/api/sync", dependencies=[Depends(require_admin)])
 def sync(db: Session = Depends(get_db)):
-    espn = espn_api.sync(db)                       # keyless: scores, kickoff times, TV networks
-    fd = football_api.sync(db)                     # augments scores if a key is configured
-    parts = []
-    if espn.get("ok"):
-        parts.append(f"ESPN {espn['updated']} matches, {espn['networks']} TV")
-    else:
-        parts.append(espn.get("msg", "ESPN unavailable"))
-    if fd.get("ok"):
-        parts.append(f"football-data {fd['updated']} updated, {fd['created']} new")
-    elif fd.get("msg") and "not set" not in fd["msg"]:
-        parts.append(fd["msg"])
-    return {"ok": bool(espn.get("ok") or fd.get("ok")),
-            "updated": espn.get("updated", 0) + fd.get("updated", 0),
-            "created": fd.get("created", 0),
-            "msg": " · ".join(p for p in parts if p)}
+    # ESPN is the sole source: keyless, reliable, and provides scores, kickoff
+    # times and TV networks. (football-data is intentionally not used — running a
+    # second source created duplicate fixtures.)
+    r = espn_api.sync(db)
+    if r.get("ok"):
+        return {"ok": True, "updated": r["updated"], "created": 0,
+                "msg": f"ESPN {r['updated']} matches, {r['networks']} TV"}
+    return {"ok": False, "updated": 0, "created": 0, "msg": r.get("msg", "ESPN unavailable")}
 
 def compute_group_tables(db):
     ms = _matches(db)
@@ -243,9 +260,7 @@ def _seconds_until_window(db):
     return best
 
 def _run_sync(db):
-    espn_api.sync(db)                                          # keyless — always available
-    if (os.environ.get("FOOTBALL_API_KEY") or "").strip():
-        football_api.sync(db)                                  # augment if a key is set
+    espn_api.sync(db)                                          # keyless — sole source
 
 def _auto_sync_loop():
     poll_min = int(os.environ.get("WINDOW_POLL_MIN", "30"))   # during match windows
