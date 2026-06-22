@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Groups</title><link rel="stylesheet" href="styles.css?v=2">
+<title>World Cup Pool — Groups</title><link rel="stylesheet" href="styles.css?v=5">
 <style>
 .groups-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .gtitle{font-weight:800;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;display:flex;justify-content:space-between}
@@ -17,7 +17,11 @@ tr.third td{background:rgba(245,197,66,.07)}
 tr.adv .pos{color:var(--acc)} tr.third .pos{color:var(--gold)}
 .legend{display:flex;gap:16px;font-size:12px;color:var(--mut);margin:6px 0 16px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle;margin-right:5px}
-</style></head>
+</style>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f1720">
+<meta name="description" content="Group standings and the race for the 8 best 3rd-placed teams.">
+<meta property="og:title" content="World Cup Pool — Groups"><meta property="og:description" content="Group standings and the race for the 8 best 3rd-placed teams."><meta property="og:type" content="website"><meta name="twitter:card" content="summary"></head>
 <body><div id="nav"></div><div class="wrap">
 <h1>Groups</h1><div class="sub">Top 2 of each group advance, plus the 8 best 3rd-placed teams.</div>
 <div class="legend"><span><span class="dot" style="background:var(--acc)"></span>Advancing (top 2)</span>
@@ -27,31 +31,41 @@ tr.adv .pos{color:var(--acc)} tr.third .pos{color:var(--gold)}
 <div id="thirds" class="card"></div>
 <div class="sub" style="margin-top:14px">Standings order: points, then goal difference, then goals for. (Official FIFA tiebreakers also use head-to-head; final placings may differ.) Pool points ignore goals — goals only decide group placement.</div>
 </div>
-<script src="app.js?v=2"></script><script>
+<script src="app.js?v=5"></script><script>
 document.getElementById("nav").innerHTML = navbar("groups");
 function gtable(letter, t){
   const head=`<tr><th class="tn">${''}</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>`;
   const rows=t.rows.map(r=>{
     const cls=r.advancing?'adv':(r.pos===3?'third':'');
     const gd=(r.gd>0?'+':'')+r.gd;
-    return `<tr class="${cls}"><td class="tn"><span class="pos">${r.pos}</span> ${flag(r.team)}<span class="cname">${r.team}</span>${r.owner?`<div class="gowner">${r.owner}</div>`:""}</td>
+    return `<tr class="${cls}"><td class="tn"><span class="pos">${r.pos}</span> ${flag(r.team)}<span class="cname">${esc(r.team)}</span>${r.owner?`<span class="gowner-badge">${esc(r.owner)}</span>`:""}</td>
       <td>${r.played}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${gd}</td><td><b>${r.pts}</b></td></tr>`;
   }).join("");
   return `<div class="card"><div class="gtitle">Group ${letter}<span class="tag">${t.complete?'FINAL':'in progress'}</span></div>
     <table class="gt"><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
 }
 async function load(){
-  let d; try{ d=await api("/api/group-standings"); }catch(e){ document.getElementById("grid").innerHTML=`<div class="empty">${e.message}</div>`; return; }
-  document.getElementById("grid").innerHTML = Object.keys(d.groups).sort().map(g=>gtable(g,d.groups[g])).join("");
-  const th=d.thirds.map(r=>{
+  const grid=document.getElementById("grid"), thirdsEl=document.getElementById("thirds");
+  let d; try{ d=await api("/api/group-standings"); }catch(e){ grid.innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  grid.innerHTML = Object.keys(d.groups).sort().map(g=>gtable(g,d.groups[g])).join("");
+  const thirds=d.thirds||[];
+  if(!thirds.length){ thirdsEl.innerHTML=`<div class="empty">No group results yet.</div>`; return; }
+  let html="", cutDrawn=false;
+  thirds.forEach((r,i)=>{
+    if(!cutDrawn && i>=8){ html+=`<div class="cutline">qualification cut — top 8 advance</div>`; cutDrawn=true; }
     const gd=(r.gd>0?'+':'')+r.gd;
-    return `<div class="match ${r.qualified?'':''}" style="${r.qualified?'':'opacity:.55'}">
-      <div class="rnd">${r.qualified?'IN':'OUT'}</div>
-      <div class="mt"><div class="mteams">${r.third_rank}. ${flag(r.team)}<span class="cname">${r.team}</span>${ownerBadge(r.owner)} <span class="muted">(Group ${r.group})</span></div>
-      <div class="mtime">${r.played} played · GD ${gd}</div></div>
-      <span class="score">${r.pts}<small class="muted"> pts</small></span></div>`;
-  }).join("") || `<div class="empty">No group results yet.</div>`;
-  document.getElementById("thirds").innerHTML = th;
+    html+=`<div class="race-row ${r.qualified?'in':'out'}">
+      <div class="qrank">${r.third_rank}</div>
+      <div class="body">
+        <div>${flag(r.team)}<span class="cname">${esc(r.team)}</span>${r.owner?`<span class="gowner-badge">${esc(r.owner)}</span>`:""} <span class="muted">Group ${esc(r.group)}</span></div>
+        <div class="meta">${r.played} played · GD ${gd}</div>
+      </div>
+      <span class="qpts">${r.pts}<small class="muted"> pts</small></span>
+      <span class="qtag">${r.qualified?'IN':'OUT'}</span></div>`;
+  });
+  thirdsEl.innerHTML=html;
 }
+window.__reload=load;
+document.getElementById("grid").innerHTML=skeletonGrid(12);
 load();
 </script></body></html>

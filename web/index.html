@@ -1,32 +1,72 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=2"></head>
+<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=5"><link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f1720">
+<meta name="description" content="Live standings, groups, and schedule for our World Cup pool.">
+<meta property="og:title" content="World Cup Pool"><meta property="og:description" content="Live standings, groups, and schedule for our World Cup pool."><meta property="og:type" content="website"><meta name="twitter:card" content="summary"></head>
 <body><div id="nav"></div><div class="wrap">
-<h1>Standings</h1><div class="sub">Tap a player to see their teams and how each one scored.</div>
+<div class="headrow"><h1>Standings</h1><button class="ghost share-btn" onclick="doShare()">Share</button></div>
+<div class="sub">Tap a player to see their teams, who's still alive, and how each one scored.</div>
 <div id="board" class="card"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:18px">Scoring: 3 pts win · 1 pt draw · +4 for each knockout round a team reaches (R32, R16, QF, SF, Final, Champion).</div>
 </div>
-<script src="app.js?v=2"></script><script>
+<script src="app.js?v=5"></script><script>
 document.getElementById("nav").innerHTML = navbar("standings");
+let STATUS={}, STANDINGS=[];
 async function load(){
   const board=document.getElementById("board");
-  let s; try{ s=await api("/api/standings"); }catch(e){ board.innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  let s,sched,grp;
+  try{ [s,sched,grp]=await Promise.all([api("/api/standings"),api("/api/schedule"),api("/api/group-standings")]); }
+  catch(e){ board.innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  STATUS=buildStatus(sched,grp); STANDINGS=s; const GINFO=groupInfo(grp);
   if(!s.length){ board.innerHTML=`<div class="empty">No players yet. Add them on the Admin page.</div>`; return; }
-  board.innerHTML="";
+  board.innerHTML=""; window._lastTotals=window._lastTotals||{};
   s.forEach(p=>{
+    const total=p.teams.length;
+    const aliveTeams=p.teams.filter(t=>STATUS[t.team]!=="Eliminated");
+    const alive=aliveTeams.length;
+    const livePts=aliveTeams.reduce((a,t)=>a+(t.points||0),0);
+    const champ=p.teams.some(t=>STATUS[t.team]==="Champion");
+    let aliveHtml;
+    if(champ) aliveHtml=`<span class="pill pill-champ">🏆 Champion</span><span class="live-pts">${alive}/${total} teams in</span>`;
+    else if(total===0) aliveHtml=`<span class="live-pts">No teams drafted</span>`;
+    else if(alive===0) aliveHtml=`<span class="pill pill-out">All teams out</span>`;
+    else aliveHtml=`<span class="pill pill-in">${alive}/${total} teams in</span><span class="live-pts">${livePts} pts still live</span>`;
+
+    const projAdv=p.teams.filter(t=>GINFO.advancing.has(t.team)).length;
+    const gamesLeft=p.teams.reduce((a,t)=>a+(GINFO.remaining[t.team]||0),0);
+    const projHtml=`<span class="proj">▸ ${projAdv} projected through</span>`
+      + (gamesLeft>0?`<span class="rem">${gamesLeft} group ${gamesLeft===1?'game':'games'} left</span>`:`<span class="rem">group stage done</span>`);
+
+    const prior=window._lastTotals[p.id];
     const row=el("div","row");
+    row.setAttribute("role","button"); row.setAttribute("tabindex","0"); row.setAttribute("aria-expanded","false");
     row.innerHTML=`<div class="rank ${p.rank===1?'r1':''}">${p.rank}</div>
-      <div class="name">${p.name}</div><div class="pts">${p.total}<small> pts</small></div>`;
+      <div class="name">${esc(p.name)}<div class="alive-line">${aliveHtml}</div><div class="proj-line">${projHtml}</div></div>
+      <div class="pts"><span class="ptsnum">${prior??0}</span><small> pts</small></div>`;
     const det=el("div","detail");
     if(!p.teams.length){ det.innerHTML=`<div class="muted" style="padding:8px 0">No teams drafted yet.</div>`; }
     p.teams.forEach(t=>{
-      const chips=(t.breakdown||[]).map(b=>`<span class="chip">${b.label} <b>+${b.points}</b></span>`).join("");
-      det.appendChild(el("div","team",
-        `<div class="tn">${flag(t.team)}<span class="cname">${t.team}</span></div><div style="flex:2">${chips?`<div class="chips">${chips}</div>`:`<span class="muted">No points yet</span>`}</div><div class="tp">${t.points}</div>`));
+      const st=STATUS[t.team], elim=st==="Eliminated";
+      const tb = st==="Champion"?`<span class="tbadge s-Champion">CHAMPION</span>`
+        : elim?`<span class="tbadge s-Eliminated">OUT</span>`
+        : `<span class="tbadge s-alive">IN</span>`;
+      const chips=(t.breakdown||[]).map(b=>`<span class="chip">${esc(b.label)} <b>+${b.points}</b></span>`).join("");
+      det.appendChild(el("div","team"+(elim?" elim":""),
+        `<div class="tflag">${flag(t.team)}<span class="cname">${esc(t.team)}</span>${tb}</div>`+
+        `<div style="flex:2">${chips?`<div class="chips">${chips}</div>`:`<span class="muted">No points yet</span>`}</div>`+
+        `<div class="tp">${t.points}</div>`));
     });
-    row.onclick=()=>det.classList.toggle("open");
+    const toggle=()=>{ const open=det.classList.toggle("open"); row.setAttribute("aria-expanded",open?"true":"false"); };
+    row.onclick=toggle;
+    row.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(); }});
     board.appendChild(row); board.appendChild(det);
+    countUp(row.querySelector(".ptsnum"), p.total, prior);
+    window._lastTotals[p.id]=p.total;
   });
 }
+function doShare(){ if(STANDINGS.length) shareStandings(STANDINGS,STATUS); else alert("No standings to share yet."); }
+window.__reload=load;
+document.getElementById("board").innerHTML=skeletonCard(6);
 load();
 </script></body></html>
