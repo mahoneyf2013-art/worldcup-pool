@@ -79,6 +79,23 @@ def sync(db):
     nets = 0
     ko_pending = {}   # round -> [(kickoff, network)] for not-yet-resolved bracket slots
 
+    # cache of still-empty knockout skeleton rows per round (no teams yet, not hand-edited)
+    _empty = {}
+    def empty_rows(rnd):
+        if rnd not in _empty:
+            rows = [m for m in db.query(Match).filter(Match.round == rnd).all()
+                    if not m.team_a and not m.manual]
+            rows.sort(key=lambda m: (m.kickoff or datetime.datetime.max, m.id))
+            _empty[rnd] = rows
+        return _empty[rnd]
+    def take_slot(rnd, kdt):
+        rows = empty_rows(rnd)
+        if not rows:
+            return None
+        row = min(rows, key=lambda m: abs(((m.kickoff or datetime.datetime.max) - kdt).total_seconds())) if kdt else rows[0]
+        rows.remove(row)
+        return row
+
     for e in events:
         rnd = ROUND.get((e.get("season") or {}).get("slug"))
         if not rnd:
@@ -106,6 +123,11 @@ def sync(db):
                 for cand in db.query(Match).all():
                     if cand.team_a and {cand.team_a, cand.team_b} == {a, b}:
                         row = cand; break
+            if row is None and rnd != "group":
+                row = take_slot(rnd, kdt)         # knockout matchup just locked in: seed an empty bracket slot
+                if row is not None:
+                    row.team_a, row.team_b = a, b
+                    row.slot_a = row.slot_b = None    # real teams now known; drop placeholders
             if row is None:
                 continue
             if kdt:
@@ -126,8 +148,8 @@ def sync(db):
                         row.winner = _n((w.get("team") or {}).get("displayName"))
             updated += 1
         else:
-            # unresolved knockout slot (e.g. "Group A Winner") — keep its date + TV
-            ko_pending.setdefault(rnd, []).append((kdt, net))
+            # unresolved knockout slot (e.g. "1F", "3RD B/E/F/I/J") — keep date, TV + placeholder labels
+            ko_pending.setdefault(rnd, []).append((kdt, net, a, b))
 
     # fill empty knockout skeleton rows with kickoff + TV, matched by round then date order
     for rnd, items in ko_pending.items():
@@ -135,11 +157,13 @@ def sync(db):
         rows = [m for m in db.query(Match).filter(Match.round == rnd).all()
                 if not m.team_a and not m.manual]
         rows.sort(key=lambda m: (m.kickoff or datetime.datetime.max, m.id))
-        for (kdt, net), row in zip(items, rows):
+        for (kdt, net, sa, sb), row in zip(items, rows):
             if kdt:
                 row.kickoff = kdt
             if net:
                 row.network = net; nets += 1
+            if sa: row.slot_a = sa
+            if sb: row.slot_b = sb
 
     db.commit()
     return {"ok": True, "updated": updated, "networks": nets}

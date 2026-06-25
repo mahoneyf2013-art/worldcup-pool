@@ -15,7 +15,9 @@ def _migrate():
     """Add columns introduced after the first deploy. create_all() won't alter an
     existing table, so add them by hand (idempotent: ignores 'already exists')."""
     from sqlalchemy import text
-    for stmt in ("ALTER TABLE matches ADD COLUMN network VARCHAR",):
+    for stmt in ("ALTER TABLE matches ADD COLUMN network VARCHAR",
+                 "ALTER TABLE matches ADD COLUMN slot_a VARCHAR",
+                 "ALTER TABLE matches ADD COLUMN slot_b VARCHAR"):
         try:
             with engine.begin() as conn:
                 conn.execute(text(stmt))
@@ -140,7 +142,7 @@ def schedule(db: Session = Depends(get_db)):
     for m in db.query(Match).all():
         rows.append(dict(id=m.id, round=m.round, grp=m.grp, team_a=m.team_a, team_b=m.team_b,
                          score_a=m.score_a, score_b=m.score_b, winner=m.winner, status=m.status,
-                         network=m.network,
+                         network=m.network, slot_a=m.slot_a, slot_b=m.slot_b,
                          owner_a=owner.get(m.team_a), owner_b=owner.get(m.team_b),
                          kickoff=m.kickoff.isoformat() if m.kickoff else None))
     rows.sort(key=lambda r:(r["kickoff"] or "9999", KO_ORDER.get(r["round"],9)))

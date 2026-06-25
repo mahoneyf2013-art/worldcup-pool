@@ -29,4 +29,6 @@ class Match(Base):
     kickoff = Column(DateTime, nullable=True)
     ext_id = Column(String, nullable=True)          # football-data match id
     network = Column(String, nullable=True)         # TV network(s), e.g. "FOX · Telemundo"
+    slot_a = Column(String, nullable=True)          # ESPN placeholder when team unknown, e.g. "1F", "3RD B/E/F/I/J"
+    slot_b = Column(String, nullable=True)
     manual = Column(Boolean, default=False)         # if True, API sync won't overwrite
