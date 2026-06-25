@@ -12,7 +12,9 @@ function fmtDate(iso){ if(!iso) return "TBD"; const d=new Date(iso);
   return d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"}); }
 
 // ---- Eastern Time kickoff (auto-handles EST/EDT; labelled ET) ----
-function etTime(iso){ if(!iso) return "TBD"; const d=new Date(iso);
+function etTime(iso){ if(!iso) return "TBD";
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)) iso+="Z"; // treat naive timestamps as UTC
+  const d=new Date(iso);
   const day=d.toLocaleDateString("en-US",{timeZone:"America/New_York",weekday:"short",month:"short",day:"numeric"});
   const t=d.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"numeric",minute:"2-digit"});
   return `${day} · ${t} ET`; }
@@ -43,11 +45,12 @@ const TAB_ICONS={
   standings:'<svg viewBox="0 0 24 24"><path d="M7 4h10v4a5 5 0 0 1-10 0zM5 4a3 3 0 0 0 3 5M19 4a3 3 0 0 1-3 5M9 19h6M12 14v5"/></svg>',
   groups:'<svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>',
   schedule:'<svg viewBox="0 0 24 24"><path d="M5 5h14v15H5zM5 9h14M9 3v4M15 3v4"/></svg>',
+  bracket:'<svg viewBox="0 0 24 24"><path d="M3 5h5v5h4M3 19h5v-5M16 7h5M16 17h5M12 14h4v-4"/></svg>',
   admin:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>'
 };
 function navbar(active){
   const tabs=[["index.html","standings","Standings"],["groups.html","groups","Groups"],
-              ["schedule.html","schedule","Schedule"],["admin.html","admin","Admin"]];
+              ["schedule.html","schedule","Schedule"],["bracket.html","bracket","Bracket"],["admin.html","admin","Admin"]];
   const top=tabs.map(([h,k,l])=>`<a href="${h}" class="${active===k?'active':''}">${l}</a>`).join("");
   const bottom=tabs.map(([h,k,l])=>`<a href="${h}" class="${active===k?'active':''}">${TAB_ICONS[k]}${l}</a>`).join("");
   return `<header><div class="wrap"><nav>

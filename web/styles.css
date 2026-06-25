@@ -164,6 +164,35 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
   letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
 .cutline::before,.cutline::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.6}
 
+/* ===== bracket page ===== */
+.scen{padding:12px 14px}
+.scen-h{font-size:12px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.scen-rows{display:flex;flex-direction:column;gap:2px}
+.scen-row{display:flex;align-items:center;gap:10px;padding:5px 6px;border-radius:8px}
+.scen-row.lead{background:rgba(245,197,66,.12)}
+.scen-row .srank{width:18px;text-align:center;font-weight:800;color:var(--mut)}
+.scen-row.lead .srank{color:var(--gold)}
+.scen-row .sname{flex:1;font-weight:700}
+.scen-row .sko{font-size:11px;font-weight:700;color:var(--acc2)}
+.scen-row .stot{font-weight:800;font-variant-numeric:tabular-nums;min-width:54px;text-align:right}
+.scen-row .stot small{color:var(--mut);font-weight:600;font-size:11px}
+.bracket{display:flex;gap:18px;overflow-x:auto;padding:6px 2px 16px}
+.bcol{display:flex;flex-direction:column;justify-content:space-around;gap:12px;min-width:172px;flex:none}
+.bcol-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);text-align:center;margin-bottom:2px}
+.bmatch{background:linear-gradient(180deg,#1b2837,#162130);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.bmatch.live{border-color:var(--acc2)}
+.bteam{display:flex;align-items:center;gap:7px;padding:8px 9px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line)}
+.bteam:last-child{border-bottom:none}
+.bteam[data-m]{cursor:pointer;transition:background .12s ease}
+.bteam[data-m]:hover{background:rgba(92,200,251,.14)}
+.bteam.win{background:rgba(52,211,106,.16)}
+.bteam.win .bn{font-weight:800}
+.bteam.lose{opacity:.45}
+.bteam.tbd{color:var(--mut)}
+.bteam .bn{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bteam .bsc{font-weight:800;font-variant-numeric:tabular-nums;color:var(--mut)}
+.bteam.win .bsc{color:var(--acc)}
+
 /* ===== motion & polish ===== */
 @keyframes fadeup{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .row,.match,.race-row{animation:fadeup .34s ease both}

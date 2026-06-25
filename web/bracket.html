@@ -1,0 +1,169 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=7">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0f1720">
+<meta name="description" content="Interactive knockout bracket — click winners and see projected pool standings.">
+</head>
+<body><div id="nav"></div><div class="wrap">
+<div class="headrow"><h1>Bracket</h1><button class="ghost" onclick="resetPicks()">Reset picks</button></div>
+<div class="sub">Click a team to send them through. Finished games are locked. Standings update live for your scenario — it doesn't change the real pool.</div>
+<div id="scenario" class="card scen"></div>
+<div id="note"></div>
+<div id="bracket" class="bracket"><div class="empty">Loading…</div></div>
+<div class="sub" style="margin-top:14px">Scoring per team: group points already earned, plus +4 for each knockout round reached (R32, R16, QF, SF, Final, Champion). The 3rd-place game scores nothing.</div>
+</div>
+<script src="app.js?v=7"></script><script>
+document.getElementById("nav").innerHTML = navbar("bracket");
+
+const ROUNDS=["R32","R16","QF","SF","Final"];
+const RLABEL={R32:"Round of 32",R16:"Round of 16",QF:"Quarterfinals",SF:"Semifinals",Final:"Final"};
+// child match id -> its two feeder (parent) match ids, by bracket order
+let PARENTS={};            // built from sorted ids
+let M={};                  // matchId -> match object from schedule
+let R={};                  // round -> [matchId,...] sorted by id
+let STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={};
+let userWin={};            // matchId -> team chosen by user
+
+function actualWinner(m){
+  if(m.status!=="FINISHED") return null;
+  if(m.winner) return m.winner;
+  if(m.score_a!=null && m.score_b!=null){ if(m.score_a>m.score_b) return m.team_a; if(m.score_b>m.score_a) return m.team_b; }
+  return null;
+}
+
+// resolve the two participants of every match, top-down (ids ascending = parents first)
+function resolveParticipants(){
+  const part={};
+  ROUNDS.forEach(rd=>{
+    (R[rd]||[]).forEach(id=>{
+      const m=M[id];
+      if(rd==="R32"){ part[id]=[m.team_a||null, m.team_b||null]; return; }
+      // if the schedule already names the teams (locked by real results), trust it
+      if(m.team_a||m.team_b){ part[id]=[m.team_a||null, m.team_b||null]; return; }
+      const [pa,pb]=PARENTS[id]||[null,null];
+      part[id]=[winnerOf(pa,part), winnerOf(pb,part)];
+    });
+  });
+  return part;
+}
+function winnerOf(pid, part){
+  if(pid==null) return null;
+  const m=M[pid]; if(!m) return null;
+  const aw=actualWinner(m); if(aw) return aw;
+  const uw=userWin[pid];
+  const ps=part[pid]||[];
+  return (uw && ps.includes(uw)) ? uw : null;   // drop stale picks if participant changed
+}
+
+function roundsReached(part){
+  // team -> number of KO rounds reached in current scenario
+  const reach={};
+  // base: appearing in an R32 match = reached R32
+  (R.R32||[]).forEach(id=>part[id].forEach(t=>{ if(t) reach[t]=Math.max(reach[t]||0,1); }));
+  // each win advances one round
+  ROUNDS.forEach((rd,ri)=>{
+    (R[rd]||[]).forEach(id=>{
+      const m=M[id]; const aw=actualWinner(m); const w=aw||((userWin[id]&&part[id].includes(userWin[id]))?userWin[id]:null);
+      if(w) reach[w]=Math.max(reach[w]||0, ri+2);  // win R32(ri0)->reached R16(2) ... win Final(ri4)->champion(6)
+    });
+  });
+  return reach;
+}
+
+function computeStandings(part){
+  const reach=roundsReached(part);
+  const rows=STAND.map(p=>{
+    let tot=0, ko=0;
+    p.teams.forEach(t=>{ const g=GROUPONLY[t.team]||0; const k=4*(reach[t.team]||0); tot+=g+k; ko+=k; });
+    return {name:p.name, total:tot, ko, cur:CURTOTAL[p.name]||0};
+  }).sort((a,b)=>b.total-a.total);
+  return rows;
+}
+
+function champion(part){
+  const f=R.Final&&R.Final[0]; if(!f) return null;
+  const m=M[f]; const aw=actualWinner(m);
+  return aw||((userWin[f]&&part[f].includes(userWin[f]))?userWin[f]:null);
+}
+
+function render(){
+  const part=resolveParticipants();
+  // scenario standings
+  const rows=computeStandings(part); const champ=champion(part);
+  const lead=rows[0];
+  let sc=`<div class="scen-h">Projected standings — your scenario${champ?` · 🏆 <b>${esc(champ)}</b> win it all`:""}</div>`;
+  sc+=`<div class="scen-rows">`;
+  rows.forEach((r,i)=>{
+    const d=r.total-r.cur;
+    sc+=`<div class="scen-row${i===0?' lead':''}"><span class="srank">${i+1}</span>`+
+        `<span class="sname">${esc(r.name)}</span>`+
+        `<span class="sko">+${r.ko} KO</span>`+
+        `<span class="stot">${r.total}<small> pts</small></span></div>`;
+  });
+  sc+=`</div>`;
+  document.getElementById("scenario").innerHTML=sc;
+
+  // note if R32 not seeded yet
+  const seeded=(R.R32||[]).some(id=>M[id].team_a||M[id].team_b);
+  document.getElementById("note").innerHTML = seeded ? "" :
+    `<div class="empty" style="padding:14px">The Round of 32 matchups aren't locked in yet — they'll appear here automatically as the group stage finishes and results sync. You'll be able to click through them then.</div>`;
+
+  // bracket columns
+  let html="";
+  ROUNDS.forEach(rd=>{
+    html+=`<div class="bcol"><div class="bcol-h">${RLABEL[rd]}</div>`;
+    (R[rd]||[]).forEach(id=>{
+      const m=M[id], ps=part[id], aw=actualWinner(m);
+      const w=aw||((userWin[id]&&ps.includes(userWin[id]))?userWin[id]:null);
+      const finished=m.status==="FINISHED";
+      const clickable=!finished && ps[0] && ps[1];
+      html+=`<div class="bmatch${finished?' done':''}${clickable?' live':''}">`;
+      [0,1].forEach(s=>{
+        const t=ps[s];
+        const isW=w&&t===w, isL=w&&t&&t!==w;
+        const sc = finished ? (s===0?m.score_a:m.score_b) : null;
+        html+=`<div class="bteam${isW?' win':''}${isL?' lose':''}${(!t)?' tbd':''}"`+
+              `${clickable&&t?` data-m="${id}" data-t="${esc(t)}" role="button" tabindex="0"`:""}>`+
+              `${t?flag(t):""}<span class="bn">${t?esc(t):"TBD"}</span>`+
+              `${sc!=null?`<span class="bsc">${sc}</span>`:""}</div>`;
+      });
+      html+=`</div>`;
+    });
+    html+=`</div>`;
+  });
+  document.getElementById("bracket").innerHTML=html;
+
+  document.querySelectorAll('.bteam[data-m]').forEach(elm=>{
+    const pick=()=>{ userWin[elm.dataset.m]=elm.dataset.t; render(); };
+    elm.onclick=pick;
+    elm.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();pick();} });
+  });
+}
+
+function resetPicks(){ userWin={}; render(); }
+
+async function load(){
+  let sched;
+  try{ [sched,STAND]=await Promise.all([api("/api/schedule"),api("/api/standings")]); }
+  catch(e){ document.getElementById("bracket").innerHTML=`<div class="empty">${e.message}</div>`; return; }
+  // index KO matches
+  M={}; R={R32:[],R16:[],QF:[],SF:[],Final:[]};
+  sched.forEach(m=>{ if(ROUNDS.includes(m.round)){ M[m.id]=m; R[m.round].push(m.id); } });
+  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>a-b));
+  // build parent map by bracket order: child k fed by feeders 2k,2k+1 of previous round
+  PARENTS={};
+  for(let ri=1; ri<ROUNDS.length; ri++){
+    const cur=R[ROUNDS[ri]], prev=R[ROUNDS[ri-1]];
+    cur.forEach((id,k)=>{ PARENTS[id]=[prev[2*k], prev[2*k+1]]; });
+  }
+  // standings helpers
+  OWNER={}; GROUPONLY={}; CURTOTAL={};
+  STAND.forEach(p=>{ CURTOTAL[p.name]=p.total;
+    p.teams.forEach(t=>{ OWNER[t.team]=p.name;
+      GROUPONLY[t.team]=(t.breakdown||[]).filter(b=>/group/i.test(b.label)).reduce((a,b)=>a+b.points,0); }); });
+  render();
+}
+window.__reload=load;          // refresh real results periodically (keeps finished games current)
+load();
+</script></body></html>

@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=5"><link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=7"><link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
 <meta name="description" content="Live standings, groups, and schedule for our World Cup pool.">
 <meta property="og:title" content="World Cup Pool"><meta property="og:description" content="Live standings, groups, and schedule for our World Cup pool."><meta property="og:type" content="website"><meta name="twitter:card" content="summary"></head>
@@ -10,7 +10,7 @@
 <div id="board" class="card"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:18px">Scoring: 3 pts win · 1 pt draw · +4 for each knockout round a team reaches (R32, R16, QF, SF, Final, Champion).</div>
 </div>
-<script src="app.js?v=5"></script><script>
+<script src="app.js?v=7"></script><script>
 document.getElementById("nav").innerHTML = navbar("standings");
 let STATUS={}, STANDINGS=[];
 async function load(){
@@ -23,15 +23,11 @@ async function load(){
   board.innerHTML=""; window._lastTotals=window._lastTotals||{};
   s.forEach(p=>{
     const total=p.teams.length;
-    const aliveTeams=p.teams.filter(t=>STATUS[t.team]!=="Eliminated");
-    const alive=aliveTeams.length;
-    const livePts=aliveTeams.reduce((a,t)=>a+(t.points||0),0);
+    const alive=p.teams.filter(t=>STATUS[t.team]!=="Eliminated").length;
     const champ=p.teams.some(t=>STATUS[t.team]==="Champion");
-    let aliveHtml;
-    if(champ) aliveHtml=`<span class="pill pill-champ">🏆 Champion</span><span class="live-pts">${alive}/${total} teams in</span>`;
-    else if(total===0) aliveHtml=`<span class="live-pts">No teams drafted</span>`;
-    else if(alive===0) aliveHtml=`<span class="pill pill-out">All teams out</span>`;
-    else aliveHtml=`<span class="pill pill-in">${alive}/${total} teams in</span><span class="live-pts">${livePts} pts still live</span>`;
+    let aliveHtml="";
+    if(champ) aliveHtml=`<span class="pill pill-champ">🏆 Champion</span>`;
+    else if(total>0 && alive===0) aliveHtml=`<span class="pill pill-out">All teams out</span>`;
 
     const projAdv=p.teams.filter(t=>GINFO.advancing.has(t.team)).length;
     const gamesLeft=p.teams.reduce((a,t)=>a+(GINFO.remaining[t.team]||0),0);
@@ -42,7 +38,7 @@ async function load(){
     const row=el("div","row");
     row.setAttribute("role","button"); row.setAttribute("tabindex","0"); row.setAttribute("aria-expanded","false");
     row.innerHTML=`<div class="rank ${p.rank===1?'r1':''}">${p.rank}</div>
-      <div class="name">${esc(p.name)}<div class="alive-line">${aliveHtml}</div><div class="proj-line">${projHtml}</div></div>
+      <div class="name">${esc(p.name)}${aliveHtml?`<div class="alive-line">${aliveHtml}</div>`:""}<div class="proj-line">${projHtml}</div></div>
       <div class="pts"><span class="ptsnum">${prior??0}</span><small> pts</small></div>`;
     const det=el("div","detail");
     if(!p.teams.length){ det.innerHTML=`<div class="muted" style="padding:8px 0">No teams drafted yet.</div>`; }
