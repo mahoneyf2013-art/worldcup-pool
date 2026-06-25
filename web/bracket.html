@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=7">
+<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=8">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
 <meta name="description" content="Interactive knockout bracket — click winners and see projected pool standings.">
@@ -13,7 +13,7 @@
 <div id="bracket" class="bracket"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:14px">Scoring per team: group points already earned, plus +4 for each knockout round reached (R32, R16, QF, SF, Final, Champion). The 3rd-place game scores nothing.</div>
 </div>
-<script src="app.js?v=7"></script><script>
+<script src="app.js?v=8"></script><script>
 document.getElementById("nav").innerHTML = navbar("bracket");
 
 const ROUNDS=["R32","R16","QF","SF","Final"];
@@ -123,9 +123,12 @@ function render(){
         const t=ps[s];
         const isW=w&&t===w, isL=w&&t&&t!==w;
         const sc = finished ? (s===0?m.score_a:m.score_b) : null;
+        const slot = s===0?m.slot_a:m.slot_b;
+        const label = t?esc(t):(slot?esc(slot):"TBD");
+        const own = (t&&OWNER[t])?`<span class="bowner">${esc(OWNER[t])}</span>`:"";
         html+=`<div class="bteam${isW?' win':''}${isL?' lose':''}${(!t)?' tbd':''}"`+
               `${clickable&&t?` data-m="${id}" data-t="${esc(t)}" role="button" tabindex="0"`:""}>`+
-              `${t?flag(t):""}<span class="bn">${t?esc(t):"TBD"}</span>`+
+              `${t?flag(t):`<span class="flag flag-tbd"></span>`}<span class="bmeta"><span class="bn">${label}</span>${own}</span>`+
               `${sc!=null?`<span class="bsc">${sc}</span>`:""}</div>`;
       });
       html+=`</div>`;
