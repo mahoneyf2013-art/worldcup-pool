@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=10">
+<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=11">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
 <meta name="description" content="Interactive knockout bracket — click winners and see projected pool standings.">
@@ -13,16 +13,14 @@
 <div id="bracket" class="bracket"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:14px">Scoring per team: group points already earned, plus +4 for each knockout round reached (R32, R16, QF, SF, Final, Champion). The 3rd-place game scores nothing.</div>
 </div>
-<script src="app.js?v=10"></script><script>
+<script src="app.js?v=11"></script><script>
 document.getElementById("nav").innerHTML = navbar("bracket");
 
 const ROUNDS=["R32","R16","QF","SF","Final"];
 const RLABEL={R32:"Round of 32",R16:"Round of 16",QF:"Quarterfinals",SF:"Semifinals",Final:"Final"};
-// child match id -> its two feeder (parent) match ids, by bracket order
-let PARENTS={};            // built from sorted ids
 let M={};                  // matchId -> match object from schedule
-let R={};                  // round -> [matchId,...] sorted by id
-let STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={};
+let R={};                  // round -> [matchId,...] ordered by kickoff (= ESPN game number)
+let STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={}, ALLTEAMS=new Set();
 let userWin={};            // matchId -> team chosen by user
 
 function actualWinner(m){
@@ -32,19 +30,28 @@ function actualWinner(m){
   return null;
 }
 
-// resolve the two participants of every match, top-down (ids ascending = parents first)
+// map an ESPN slot label like "Round of 32 5 Winner" to the feeding match id
+function feederMatch(slotStr){
+  if(!slotStr) return null;
+  const m=slotStr.match(/^(Round of 32|Round of 16|Quarter-?final|Semi-?final)s?\s+(\d+)\s+Winner$/i);
+  if(!m) return null;
+  const map={"round of 32":"R32","round of 16":"R16","quarterfinal":"QF","quarter-final":"QF","semifinal":"SF","semi-final":"SF"};
+  const rd=map[m[1].toLowerCase()], num=parseInt(m[2],10), arr=R[rd]||[];
+  return (num>=1 && num<=arr.length) ? arr[num-1] : null;   // R[] is ordered by ESPN game number
+}
+// resolve one side of a match: a real team, a slot that already names a team, or the feeder's winner
+function sideTeam(m, s, part){
+  const t = s===0 ? m.team_a : m.team_b;
+  if(t) return t;
+  const sv = s===0 ? m.slot_a : m.slot_b;
+  if(sv && ALLTEAMS.has(sv)) return sv;
+  const fid = feederMatch(sv);
+  if(fid!=null) return winnerOf(fid, part);
+  return null;                                  // unknown -> the slot label is shown instead
+}
 function resolveParticipants(){
   const part={};
-  ROUNDS.forEach(rd=>{
-    (R[rd]||[]).forEach(id=>{
-      const m=M[id];
-      if(rd==="R32"){ part[id]=[m.team_a||null, m.team_b||null]; return; }
-      // if the schedule already names the teams (locked by real results), trust it
-      if(m.team_a||m.team_b){ part[id]=[m.team_a||null, m.team_b||null]; return; }
-      const [pa,pb]=PARENTS[id]||[null,null];
-      part[id]=[winnerOf(pa,part), winnerOf(pb,part)];
-    });
-  });
+  ROUNDS.forEach(rd=>{ (R[rd]||[]).forEach(id=>{ const m=M[id]; part[id]=[sideTeam(m,0,part), sideTeam(m,1,part)]; }); });
   return part;
 }
 function winnerOf(pid, part){
@@ -153,17 +160,12 @@ async function load(){
   // index KO matches
   M={}; R={R32:[],R16:[],QF:[],SF:[],Final:[]};
   sched.forEach(m=>{ if(ROUNDS.includes(m.round)){ M[m.id]=m; R[m.round].push(m.id); } });
-  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>a-b));
-  // build parent map by bracket order: child k fed by feeders 2k,2k+1 of previous round
-  PARENTS={};
-  for(let ri=1; ri<ROUNDS.length; ri++){
-    const cur=R[ROUNDS[ri]], prev=R[ROUNDS[ri-1]];
-    cur.forEach((id,k)=>{ PARENTS[id]=[prev[2*k], prev[2*k+1]]; });
-  }
+  // order each round by kickoff so positions line up with ESPN's game numbers (used in slot labels)
+  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>{ const ka=M[a].kickoff||"", kb=M[b].kickoff||""; return ka<kb?-1:ka>kb?1:a-b; }));
   // standings helpers
-  OWNER={}; GROUPONLY={}; CURTOTAL={};
+  OWNER={}; GROUPONLY={}; CURTOTAL={}; ALLTEAMS=new Set();
   STAND.forEach(p=>{ CURTOTAL[p.name]=p.total;
-    p.teams.forEach(t=>{ OWNER[t.team]=p.name;
+    p.teams.forEach(t=>{ OWNER[t.team]=p.name; ALLTEAMS.add(t.team);
       GROUPONLY[t.team]=(t.breakdown||[]).filter(b=>/group/i.test(b.label)).reduce((a,b)=>a+b.points,0); }); });
   render();
 }
