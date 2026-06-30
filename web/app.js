@@ -126,10 +126,16 @@ function buildStatus(schedule, groupData){
   const fin=(schedule||[]).find(m=>m.round==="Final"&&m.status==="FINISHED");
   const champ=fin?(fin.winner||(fin.score_a>fin.score_b?fin.team_a:fin.team_b)):null;
   const KO=["R32","R16","QF","SF","Final"];
+  const koWin=m=>m.winner||(m.score_a>m.score_b?m.team_a:(m.score_b>m.score_a?m.team_b:null));
   teams.forEach(t=>{
     if(t===champ){ status[t]="Champion"; return; }
-    if((schedule||[]).some(m=>KO.includes(m.round)&&(m.team_a===t||m.team_b===t)&&m.status!=="FINISHED")){ status[t]="alive"; return; }
-    if((schedule||[]).some(m=>KO.includes(m.round)&&(m.team_a===t||m.team_b===t)&&m.status==="FINISHED")){ status[t]="Eliminated"; return; }
+    const ko=(schedule||[]).filter(m=>KO.includes(m.round)&&(m.team_a===t||m.team_b===t));
+    if(ko.some(m=>m.status!=="FINISHED")){ status[t]="alive"; return; }   // playing or awaiting a knockout game
+    if(ko.length){                                                        // all its knockout games are finished
+      const lost=ko.some(m=>m.status==="FINISHED"&&koWin(m)&&koWin(m)!==t);
+      status[t]=lost?"Eliminated":"alive";   // won its last game; next round just isn't drawn yet
+      return;
+    }
     const g=groupOf[t];
     status[t]=(g && complete[g]) ? (advancing.has(t)?"alive":"Eliminated") : "alive";
   });

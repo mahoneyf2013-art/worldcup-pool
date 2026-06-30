@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=8"><link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>World Cup Pool — Standings</title><link rel="stylesheet" href="styles.css?v=10"><link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
 <meta name="description" content="Live standings, groups, and schedule for our World Cup pool.">
 <meta property="og:title" content="World Cup Pool"><meta property="og:description" content="Live standings, groups, and schedule for our World Cup pool."><meta property="og:type" content="website"><meta name="twitter:card" content="summary"></head>
@@ -10,7 +10,7 @@
 <div id="board" class="card"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:18px">Scoring: 3 pts win · 1 pt draw · +4 for each knockout round a team reaches (R32, R16, QF, SF, Final, Champion).</div>
 </div>
-<script src="app.js?v=8"></script><script>
+<script src="app.js?v=10"></script><script>
 document.getElementById("nav").innerHTML = navbar("standings");
 let STATUS={}, STANDINGS=[];
 async function load(){
@@ -18,7 +18,13 @@ async function load(){
   let s,sched,grp;
   try{ [s,sched,grp]=await Promise.all([api("/api/standings"),api("/api/schedule"),api("/api/group-standings")]); }
   catch(e){ board.innerHTML=`<div class="empty">${e.message}</div>`; return; }
-  STATUS=buildStatus(sched,grp); STANDINGS=s; const GINFO=groupInfo(grp);
+  STATUS=buildStatus(sched,grp); STANDINGS=s;
+  const KO=["R32","R16","QF","SF","Final"], KOL={R32:"R32",R16:"R16",QF:"QF",SF:"SF",Final:"F"},
+        RTITLE={R32:"Round of 32 — to play",R16:"Round of 16 — to play",QF:"Quarterfinals (8) — to play",SF:"Semifinals (4) — to play",Final:"Final — to play"};
+  const allTeams=new Set(); s.forEach(p=>p.teams.forEach(t=>allTeams.add(t.team)));
+  const pend={};   // team -> index of the knockout round it is next to play (incl. teams sitting in a placeholder slot)
+  (sched||[]).forEach(m=>{ const ri=KO.indexOf(m.round); if(ri<0||m.status==="FINISHED") return;
+    [m.team_a,m.team_b,m.slot_a,m.slot_b].forEach(t=>{ if(t&&allTeams.has(t)&&(!(t in pend)||ri<pend[t])) pend[t]=ri; }); });
   if(!s.length){ board.innerHTML=`<div class="empty">No players yet. Add them on the Admin page.</div>`; return; }
   board.innerHTML=""; window._lastTotals=window._lastTotals||{};
   s.forEach(p=>{
@@ -29,16 +35,15 @@ async function load(){
     if(champ) aliveHtml=`<span class="pill pill-champ">🏆 Champion</span>`;
     else if(total>0 && alive===0) aliveHtml=`<span class="pill pill-out">All teams out</span>`;
 
-    const projAdv=p.teams.filter(t=>GINFO.advancing.has(t.team)).length;
-    const gamesLeft=p.teams.reduce((a,t)=>a+(GINFO.remaining[t.team]||0),0);
-    const projHtml=`<span class="proj">▸ ${projAdv} projected through</span>`
-      + (gamesLeft>0?`<span class="rem">${gamesLeft} group ${gamesLeft===1?'game':'games'} left</span>`:`<span class="rem">group stage done</span>`);
+    const koc=[0,0,0,0,0];
+    p.teams.forEach(t=>{ if(t.team in pend) koc[pend[t.team]]++; });
+    const koHtml=KO.map((r,i)=>`<span class="kop${koc[i]?'':' z'}" title="${RTITLE[r]}"><b>${KOL[r]}</b>${koc[i]}</span>`).join("");
 
     const prior=window._lastTotals[p.id];
     const row=el("div","row");
     row.setAttribute("role","button"); row.setAttribute("tabindex","0"); row.setAttribute("aria-expanded","false");
     row.innerHTML=`<div class="rank ${p.rank===1?'r1':''}">${p.rank}</div>
-      <div class="name">${esc(p.name)}${aliveHtml?`<div class="alive-line">${aliveHtml}</div>`:""}<div class="proj-line">${projHtml}</div></div>
+      <div class="name">${esc(p.name)}${aliveHtml?`<div class="alive-line">${aliveHtml}</div>`:""}<div class="ko-line" title="Teams still to play in each knockout round">${koHtml}</div></div>
       <div class="pts"><span class="ptsnum">${prior??0}</span><small> pts</small></div>`;
     const det=el("div","detail");
     if(!p.teams.length){ det.innerHTML=`<div class="muted" style="padding:8px 0">No teams drafted yet.</div>`; }
