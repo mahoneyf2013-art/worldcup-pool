@@ -74,7 +74,9 @@ def compute_team_scores(matches):
         else:
             ta["gd"] += 1; tb["gd"] += 1
 
-    # --- knockout: a team reaches a round if it appears in a match of that round ---
+    # --- knockout: a team reaches a round if it appears in a match of that round,
+    #     OR if it won the previous round (covers the gap before the next match is drawn) ---
+    NEXT = {"R32": "R16", "R16": "QF", "QF": "SF", "SF": "Final"}
     reached = defaultdict(set)
     for m in matches:
         r = m.get("round")
@@ -82,6 +84,10 @@ def compute_team_scores(matches):
             for name in (m.get("team_a"), m.get("team_b")):
                 if name:
                     reached[name].add(r); t(name)
+            if _finished(m):
+                w = _winner(m)
+                if w and r in NEXT:
+                    reached[w].add(NEXT[r]); t(w)   # winning a round = reaching the next one
         if r == "Final" and _finished(m):
             w = _winner(m)
             if w:
