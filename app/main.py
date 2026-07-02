@@ -71,6 +71,51 @@ def _repair_matches():
         db.close()
 _repair_matches()
 
+# ---------- official knockout bracket: derive matchups from results ----------
+# match id -> (feeder a, feeder b). IDs are FIFA match numbers (73-104), matching our rows.
+KO_FEEDERS = {89:(74,77),90:(73,75),91:(76,78),92:(79,80),93:(83,84),94:(81,82),95:(86,88),96:(85,87),
+              97:(89,90),98:(93,94),99:(91,92),100:(95,96),101:(97,98),102:(99,100),104:(101,102)}
+KO_THIRD = (101,102)   # match 103 (3rd place) = the two semifinal losers
+
+def _mwinner(m):
+    if not m: return None
+    if m.winner: return m.winner
+    if m.status == "FINISHED" and m.score_a is not None and m.score_b is not None:
+        if m.score_a > m.score_b: return m.team_a
+        if m.score_b > m.score_a: return m.team_b
+    return None
+
+def _mloser(m):
+    w = _mwinner(m)
+    if not w or not m.team_a or not m.team_b: return None
+    return m.team_b if w == m.team_a else m.team_a
+
+def propagate_bracket(db):
+    """Fill knockout matchups (R16 -> Final, plus 3rd place) from the official bracket tree
+    and the winners so far, so Schedule/Bracket/scoring all agree. R32 rows are left as seeded.
+    Manual edits (match.manual) are never overwritten."""
+    ms = {m.id: m for m in db.query(Match).all()}
+    changed = False
+    for mid in (89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104):
+        m = ms.get(mid)
+        if not m or m.manual: continue
+        if mid == 103:
+            fa, fb = KO_THIRD; a, b = _mloser(ms.get(fa)), _mloser(ms.get(fb)); lbl = "Loser"
+        else:
+            fa, fb = KO_FEEDERS[mid]; a, b = _mwinner(ms.get(fa)), _mwinner(ms.get(fb)); lbl = "Winner"
+        sa = None if a else f"{lbl} Match {fa}"
+        sb = None if b else f"{lbl} Match {fb}"
+        if (m.team_a, m.team_b, m.slot_a, m.slot_b) != (a, b, sa, sb):
+            m.team_a, m.team_b, m.slot_a, m.slot_b = a, b, sa, sb
+            changed = True
+    if changed: db.commit()
+
+def _startup_propagate():
+    db = SessionLocal()
+    try: propagate_bracket(db)
+    finally: db.close()
+_startup_propagate()
+
 def _matches(db):
     return [dict(id=m.id, round=m.round, grp=m.grp, team_a=m.team_a, team_b=m.team_b,
                  score_a=m.score_a, score_b=m.score_b, winner=m.winner, status=m.status,
@@ -187,7 +232,7 @@ def update_match(mid:int, body:MatchIn, db: Session = Depends(get_db)):
         v=getattr(body,f)
         if v is not None: setattr(m,f,v)
     m.manual=True            # protect hand-entered result from API sync
-    db.commit(); return {"ok":True}
+    db.commit(); propagate_bracket(db); return {"ok":True}
 
 @app.post("/api/sync", dependencies=[Depends(require_admin)])
 def sync(db: Session = Depends(get_db)):
@@ -195,6 +240,7 @@ def sync(db: Session = Depends(get_db)):
     # times and TV networks. (football-data is intentionally not used — running a
     # second source created duplicate fixtures.)
     r = espn_api.sync(db)
+    propagate_bracket(db)
     if r.get("ok"):
         return {"ok": True, "updated": r["updated"], "created": 0,
                 "msg": f"ESPN {r['updated']} matches, {r['networks']} TV"}
@@ -263,6 +309,7 @@ def _seconds_until_window(db):
 
 def _run_sync(db):
     espn_api.sync(db)                                          # keyless — sole source
+    propagate_bracket(db)                                      # derive KO matchups from the official tree
 
 def _auto_sync_loop():
     poll_min = int(os.environ.get("WINDOW_POLL_MIN", "30"))   # during match windows

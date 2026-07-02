@@ -123,8 +123,8 @@ def sync(db):
                 for cand in db.query(Match).all():
                     if cand.team_a and {cand.team_a, cand.team_b} == {a, b}:
                         row = cand; break
-            if row is None and rnd != "group":
-                row = take_slot(rnd, kdt)         # knockout matchup just locked in: seed an empty bracket slot
+            if row is None and rnd == "R32":
+                row = take_slot(rnd, kdt)         # only the R32 is seeded from ESPN; R16+ come from the bracket tree
                 if row is not None:
                     row.team_a, row.team_b = a, b
                     row.slot_a = row.slot_b = None    # real teams now known; drop placeholders
