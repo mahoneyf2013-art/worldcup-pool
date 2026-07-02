@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=14">
+<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=15">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
 <meta name="description" content="Full knockout bracket — click winners and see projected pool standings.">
@@ -8,21 +8,24 @@
 <body><div id="nav"></div><div class="wrap">
 <div class="headrow"><h1>Bracket</h1><button class="ghost" onclick="resetPicks()">Reset picks</button></div>
 <div class="sub">The full knockout bracket (official FIFA structure). Click a winner in any set matchup to send them through — projected standings update live. It doesn't change the real pool.</div>
+<div id="brkwarn" class="brkwarn" hidden></div>
 <div id="scenario" class="card scen"></div>
 <div id="bracket" class="bracket"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:14px">Scoring per team: group points already earned, plus +4 for each knockout round reached (R32, R16, QF, SF, Final, Champion). The 3rd-place game scores nothing.</div>
 </div>
-<script src="app.js?v=14"></script><script>
+<script src="app.js?v=15"></script><script>
 document.getElementById("nav").innerHTML = navbar("bracket");
 
 const ROUNDS=["R32","R16","QF","SF","Final"];
 const RLABEL={R32:"Round of 32",R16:"Round of 16",QF:"Quarterfinals",SF:"Semifinals",Final:"Final"};
-// official FIFA 2026 bracket: match id -> [feeder match id a, feeder match id b] (ids ARE FIFA match numbers)
+// official FIFA 2026 bracket, keyed by FIFA MATCH NUMBER (bracket_seq): seq -> [feeder seq a, feeder seq b].
+// Games are matched by bracket_seq (their true bracket position), NOT by database row id, because the
+// live sync can seed a game into any physical row. The backend tags each game with its bracket_seq.
 const FEEDERS={
   89:[74,77], 90:[73,75], 91:[76,78], 92:[79,80], 93:[83,84], 94:[81,82], 95:[86,88], 96:[85,87],
   97:[89,90], 98:[93,94], 99:[91,92], 100:[95,96], 101:[97,98], 102:[99,100], 104:[101,102]
 };
-let M={}, R={}, DISPLAY={}, STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={}, userWin={};
+let BY_SEQ={}, SEQS={}, ALLM=[], DISPLAY={}, STAND=[], OWNER={}, GROUPONLY={}, userWin={};
 
 function actualWinner(m){
   if(!m || m.status!=="FINISHED") return null;
@@ -30,32 +33,32 @@ function actualWinner(m){
   if(m.score_a!=null && m.score_b!=null){ if(m.score_a>m.score_b) return m.team_a; if(m.score_b>m.score_a) return m.team_b; }
   return null;
 }
-// find the actual played match for a pair of teams, regardless of which row it was stored in
-function finishedFor(rd, a, b){
+// find the actual played knockout match for a pair of teams, regardless of which row it was stored in
+function finishedFor(a,b){
   if(!a||!b) return null;
-  return (R[rd]||[]).map(id=>M[id]).find(m=>m.status==="FINISHED" &&
+  return ALLM.find(m=>m.status==="FINISHED" &&
     ((m.team_a===a&&m.team_b===b)||(m.team_a===b&&m.team_b===a))) || null;
 }
-// resolve every match from the official tree: participants, winner, finished, score
+// resolve every match from the official tree (in bracket_seq space): participants, winner, finished, score
 function resolve(){
   const info={};
   ROUNDS.forEach(rd=>{
-    (R[rd]||[]).forEach(id=>{
+    (SEQS[rd]||[]).forEach(seq=>{
       let a,b,fin=null;
-      if(rd==="R32"){ a=M[id].team_a||null; b=M[id].team_b||null; if(M[id].status==="FINISHED") fin=M[id]; }
-      else { const [pa,pb]=FEEDERS[id]||[]; a=info[pa]?info[pa].winner:null; b=info[pb]?info[pb].winner:null; fin=finishedFor(rd,a,b); }
+      if(rd==="R32"){ const m=BY_SEQ[seq]; a=m?m.team_a||null:null; b=m?m.team_b||null:null; if(m&&m.status==="FINISHED") fin=m; }
+      else { const [pa,pb]=FEEDERS[seq]||[]; a=info[pa]?info[pa].winner:null; b=info[pb]?info[pb].winner:null; fin=finishedFor(a,b); }
       let winner=fin?actualWinner(fin):null;
-      if(!winner){ const uw=userWin[id]; if(uw&&(uw===a||uw===b)) winner=uw; }
+      if(!winner){ const uw=userWin[seq]; if(uw&&(uw===a||uw===b)) winner=uw; }
       let sa=null,sb=null;
       if(fin){ if(fin.team_a===a){ sa=fin.score_a; sb=fin.score_b; } else { sa=fin.score_b; sb=fin.score_a; } }
-      info[id]={a,b,winner,finished:!!fin,sa,sb};
+      info[seq]={a,b,winner,finished:!!fin,sa,sb};
     });
   });
   return info;
 }
 function reachFrom(info){
   const reach={};
-  ROUNDS.forEach((rd,ri)=>{ (R[rd]||[]).forEach(id=>{ const x=info[id];
+  ROUNDS.forEach((rd,ri)=>{ (SEQS[rd]||[]).forEach(seq=>{ const x=info[seq];
     [x.a,x.b].forEach(t=>{ if(t) reach[t]=Math.max(reach[t]||0, ri+1); });
     if(x.winner) reach[x.winner]=Math.max(reach[x.winner]||0, ri+2);
   }); });
@@ -80,14 +83,14 @@ function render(){
   let html="";
   ROUNDS.forEach(rd=>{
     html+=`<div class="bcol"><div class="bcol-h">${RLABEL[rd]}</div>`;
-    (DISPLAY[rd]||[]).forEach(id=>{
-      const x=info[id], w=x.winner, clickable=!x.finished && x.a && x.b;
+    (DISPLAY[rd]||[]).forEach(seq=>{
+      const x=info[seq]; if(!x) return; const w=x.winner, clickable=!x.finished && x.a && x.b;
       html+=`<div class="bmatch${x.finished?' done':''}${clickable?' live':''}">`;
       [["a","sa"],["b","sb"]].forEach(([tk,sk])=>{
         const t=x[tk], isW=w&&t===w, isL=w&&t&&t!==w, scv=x.finished?x[sk]:null;
         const own=(t&&OWNER[t])?`<span class="bowner">${esc(OWNER[t])}</span>`:"";
         html+=`<div class="bteam${isW?' win':''}${isL?' lose':''}${(!t)?' tbd':''}"`+
-              `${clickable&&t?` data-m="${id}" data-t="${esc(t)}" role="button" tabindex="0"`:""}>`+
+              `${clickable&&t?` data-m="${seq}" data-t="${esc(t)}" role="button" tabindex="0"`:""}>`+
               `${t?flag(t):`<span class="flag flag-tbd"></span>`}<span class="bmeta"><span class="bn">${t?esc(t):"TBD"}</span>${own}</span>`+
               `${scv!=null?`<span class="bsc">${scv}</span>`:""}</div>`;
       });
@@ -106,16 +109,16 @@ function resetPicks(){ userWin={}; render(); }
 
 // display order (bracket order): DFS from the Final so each match sits between its two feeders
 function buildDisplay(){
-  DISPLAY={Final:(R.Final||[]).slice()};
+  DISPLAY={Final:(SEQS.Final||[]).slice()};
   const PREV={Final:"SF",SF:"QF",QF:"R16",R16:"R32"};
   ["Final","SF","QF","R16"].forEach(rd=>{
-    const arr=[]; (DISPLAY[rd]||[]).forEach(id=>{ const f=FEEDERS[id]||[]; if(f[0]!=null)arr.push(f[0]); if(f[1]!=null)arr.push(f[1]); });
+    const arr=[]; (DISPLAY[rd]||[]).forEach(seq=>{ const f=FEEDERS[seq]||[]; if(f[0]!=null)arr.push(f[0]); if(f[1]!=null)arr.push(f[1]); });
     DISPLAY[PREV[rd]]=arr;
   });
-  // safety: append any matches not captured, keep only ids we actually have
+  // safety: append any matches not captured, keep only seqs we actually have
   ROUNDS.forEach(rd=>{ const seen=new Set(), out=[];
-    (DISPLAY[rd]||[]).forEach(id=>{ if(M[id]&&!seen.has(id)){seen.add(id);out.push(id);} });
-    (R[rd]||[]).forEach(id=>{ if(!seen.has(id)){seen.add(id);out.push(id);} });
+    (DISPLAY[rd]||[]).forEach(s=>{ if(BY_SEQ[s]&&!seen.has(s)){seen.add(s);out.push(s);} });
+    (SEQS[rd]||[]).forEach(s=>{ if(!seen.has(s)){seen.add(s);out.push(s);} });
     DISPLAY[rd]=out; });
 }
 
@@ -123,15 +126,31 @@ async function load(){
   let sched;
   try{ [sched,STAND]=await Promise.all([api("/api/schedule"),api("/api/standings")]); }
   catch(e){ document.getElementById("bracket").innerHTML=`<div class="empty">${e.message}</div>`; return; }
-  M={}; R={R32:[],R16:[],QF:[],SF:[],Final:[]};
-  sched.forEach(m=>{ if(ROUNDS.includes(m.round)){ M[m.id]=m; R[m.round].push(m.id); } });
-  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>a-b));
-  OWNER={}; GROUPONLY={}; CURTOTAL={};
-  STAND.forEach(p=>{ CURTOTAL[p.name]=p.total;
+  BY_SEQ={}; SEQS={R32:[],R16:[],QF:[],SF:[],Final:[]}; ALLM=[];
+  sched.forEach(m=>{
+    if(!ROUNDS.includes(m.round)) return;
+    ALLM.push(m);
+    // bracket position: backend tag, falling back to row id for R16+ if the tag isn't present yet
+    const seq = (m.bracket_seq!=null) ? m.bracket_seq : (m.round!=="R32" ? m.id : null);
+    if(seq!=null){ BY_SEQ[seq]=m; SEQS[m.round].push(seq); }
+  });
+  ROUNDS.forEach(rd=>SEQS[rd].sort((a,b)=>a-b));
+  OWNER={}; GROUPONLY={};
+  STAND.forEach(p=>{
     p.teams.forEach(t=>{ OWNER[t.team]=p.name;
       GROUPONLY[t.team]=(t.breakdown||[]).filter(b=>/group/i.test(b.label)).reduce((a,b)=>a+b.points,0); }); });
   buildDisplay();
   render();
+  checkHealth();
+}
+// surface any bracket inconsistency instead of silently showing something wrong
+async function checkHealth(){
+  const el=document.getElementById("brkwarn"); if(!el) return;
+  try{ const h=await api("/api/bracket-check");
+    if(h&&h.ok===false&&(h.warnings||[]).length){
+      el.innerHTML="⚠️ "+h.warnings.map(esc).join("<br>"); el.hidden=false;
+    } else { el.hidden=true; }
+  }catch(e){ el.hidden=true; }
 }
 window.__reload=load;
 load();

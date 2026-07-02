@@ -181,6 +181,8 @@ a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid 
 .scen-row .sko{font-size:11px;font-weight:700;color:var(--acc2)}
 .scen-row .stot{font-weight:800;font-variant-numeric:tabular-nums;min-width:54px;text-align:right}
 .scen-row .stot small{color:var(--mut);font-weight:600;font-size:11px}
+.brkwarn{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);color:#fecaca;
+  border-radius:10px;padding:10px 12px;margin:0 0 14px;font-size:13px;line-height:1.45}
 .bracket{display:flex;gap:18px;overflow-x:auto;padding:6px 2px 16px}
 .bcol{display:flex;flex-direction:column;justify-content:space-around;gap:12px;min-width:172px;flex:none}
 .bcol-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);text-align:center;margin-bottom:2px}
