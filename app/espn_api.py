@@ -77,6 +77,7 @@ def sync(db):
 
     updated = 0
     nets = 0
+    ko_pairs = {}     # round -> [[team_a, team_b], ...] real, ESPN-drawn knockout matchups (ground truth)
     ko_pending = {}   # round -> [(kickoff, network)] for not-yet-resolved bracket slots
 
     # cache of still-empty knockout skeleton rows per round (no teams yet, not hand-edited)
@@ -115,6 +116,8 @@ def sync(db):
 
         if a in TEAMS and b in TEAMS:
             # resolved match (group, or a knockout whose teams are known): match by team set
+            if rnd != "group":
+                ko_pairs.setdefault(rnd, []).append([a, b])   # ESPN's real, drawn knockout matchup
             row = None
             for cand in db.query(Match).filter(Match.round == rnd).all():
                 if cand.team_a and {cand.team_a, cand.team_b} == {a, b}:
@@ -166,4 +169,32 @@ def sync(db):
             if sb: row.slot_b = sb
 
     db.commit()
-    return {"ok": True, "updated": updated, "networks": nets}
+    return {"ok": True, "updated": updated, "networks": nets, "ko_pairs": ko_pairs}
+
+
+def fetch_ko_pairs():
+    """Read-only: ESPN's real, drawn knockout matchups as {round: [[team_a, team_b], ...]}.
+    Used by the bracket self-check to compare our derived bracket against ground truth.
+    Never writes to the database."""
+    try:
+        r = httpx.get(SCOREBOARD, params={"dates": _date_range()}, timeout=20)
+        r.raise_for_status()
+        events = r.json().get("events", [])
+    except Exception as e:
+        return {"ok": False, "msg": f"ESPN error: {e}", "ko_pairs": {}}
+    pairs = {}
+    for e in events:
+        rnd = ROUND.get((e.get("season") or {}).get("slug"))
+        if not rnd or rnd == "group":
+            continue
+        comp = (e.get("competitions") or [{}])[0]
+        cs = comp.get("competitors", [])
+        home = next((c for c in cs if c.get("homeAway") == "home"), None)
+        away = next((c for c in cs if c.get("homeAway") == "away"), None)
+        if not home or not away:
+            continue
+        a = _n((home.get("team") or {}).get("displayName"))
+        b = _n((away.get("team") or {}).get("displayName"))
+        if a in TEAMS and b in TEAMS:
+            pairs.setdefault(rnd, []).append([a, b])
+    return {"ok": True, "ko_pairs": pairs}

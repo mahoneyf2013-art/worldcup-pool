@@ -31,4 +31,5 @@ class Match(Base):
     network = Column(String, nullable=True)         # TV network(s), e.g. "FOX · Telemundo"
     slot_a = Column(String, nullable=True)          # ESPN placeholder when team unknown, e.g. "1F", "3RD B/E/F/I/J"
     slot_b = Column(String, nullable=True)
+    bracket_seq = Column(Integer, nullable=True)    # official FIFA match number (73-104) — the bracket position, independent of row id
     manual = Column(Boolean, default=False)         # if True, API sync won't overwrite
