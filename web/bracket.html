@@ -1,216 +1,138 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=12">
+<title>World Cup Pool — Bracket</title><link rel="stylesheet" href="styles.css?v=14">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0f1720">
-<meta name="description" content="Interactive knockout bracket — click winners and see projected pool standings.">
+<meta name="description" content="Full knockout bracket — click winners and see projected pool standings.">
 </head>
 <body><div id="nav"></div><div class="wrap">
 <div class="headrow"><h1>Bracket</h1><button class="ghost" onclick="resetPicks()">Reset picks</button></div>
-<div class="sub">Click a team to send them through. Finished games are locked. Standings update live for your scenario — it doesn't change the real pool.</div>
+<div class="sub">The full knockout bracket (official FIFA structure). Click a winner in any set matchup to send them through — projected standings update live. It doesn't change the real pool.</div>
 <div id="scenario" class="card scen"></div>
-<div id="note"></div>
 <div id="bracket" class="bracket"><div class="empty">Loading…</div></div>
 <div class="sub" style="margin-top:14px">Scoring per team: group points already earned, plus +4 for each knockout round reached (R32, R16, QF, SF, Final, Champion). The 3rd-place game scores nothing.</div>
 </div>
-<script src="app.js?v=12"></script><script>
+<script src="app.js?v=14"></script><script>
 document.getElementById("nav").innerHTML = navbar("bracket");
 
 const ROUNDS=["R32","R16","QF","SF","Final"];
 const RLABEL={R32:"Round of 32",R16:"Round of 16",QF:"Quarterfinals",SF:"Semifinals",Final:"Final"};
-let M={};                  // matchId -> match object from schedule
-let R={};                  // round -> [matchId,...] ordered by kickoff (= ESPN game number)
-let PARENTS={};            // matchId -> [feeder match id a, feeder match id b]
-let DISPLAY={};            // round -> [matchId,...] in bracket order (siblings adjacent)
-let STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={}, ALLTEAMS=new Set();
-let userWin={};            // matchId -> team chosen by user
-const PREV={R16:"R32",QF:"R16",SF:"QF",Final:"SF"};
+// official FIFA 2026 bracket: match id -> [feeder match id a, feeder match id b] (ids ARE FIFA match numbers)
+const FEEDERS={
+  89:[74,77], 90:[73,75], 91:[76,78], 92:[79,80], 93:[83,84], 94:[81,82], 95:[86,88], 96:[85,87],
+  97:[89,90], 98:[93,94], 99:[91,92], 100:[95,96], 101:[97,98], 102:[99,100], 104:[101,102]
+};
+let M={}, R={}, DISPLAY={}, STAND=[], OWNER={}, GROUPONLY={}, CURTOTAL={}, userWin={};
 
 function actualWinner(m){
-  if(m.status!=="FINISHED") return null;
+  if(!m || m.status!=="FINISHED") return null;
   if(m.winner) return m.winner;
   if(m.score_a!=null && m.score_b!=null){ if(m.score_a>m.score_b) return m.team_a; if(m.score_b>m.score_a) return m.team_b; }
   return null;
 }
-
-// an ESPN slot label ("Round of 32 5 Winner") -> feeding match id (ESPN game N = kickoff order)
-function labelParent(sv){
-  if(!sv) return null;
-  const m=sv.match(/^(Round of 32|Round of 16|Quarter-?final|Semi-?final)s?\s+(\d+)\s+Winner$/i);
-  if(!m) return null;
-  const map={"round of 32":"R32","round of 16":"R16","quarterfinal":"QF","quarter-final":"QF","semifinal":"SF","semi-final":"SF"};
-  const rd=map[m[1].toLowerCase()], num=parseInt(m[2],10), arr=R[rd]||[];
-  return (num>=1 && num<=arr.length) ? arr[num-1] : null;
+// find the actual played match for a pair of teams, regardless of which row it was stored in
+function finishedFor(rd, a, b){
+  if(!a||!b) return null;
+  return (R[rd]||[]).map(id=>M[id]).find(m=>m.status==="FINISHED" &&
+    ((m.team_a===a&&m.team_b===b)||(m.team_a===b&&m.team_b===a))) || null;
 }
-function slotTeamName(sv){ return (sv && ALLTEAMS.has(sv)) ? sv : null; }
-function teamParent(team, prevRnd){
-  if(!team) return null;
-  for(const id of (R[prevRnd]||[])){ const m=M[id]; if(m.team_a===team||m.team_b===team||m.slot_a===team||m.slot_b===team) return id; }
-  return null;
-}
-// reconstruct the full bracket tree from ESPN labels, then order the columns for display
-function buildBracket(){
-  PARENTS={};
-  ["R16","QF"].forEach(rd=>{
-    const prev=PREV[rd];
+// resolve every match from the official tree: participants, winner, finished, score
+function resolve(){
+  const info={};
+  ROUNDS.forEach(rd=>{
     (R[rd]||[]).forEach(id=>{
-      const m=M[id];
-      const pa = labelParent(m.slot_a) ?? teamParent(m.team_a||slotTeamName(m.slot_a), prev);
-      const pb = labelParent(m.slot_b) ?? teamParent(m.team_b||slotTeamName(m.slot_b), prev);
-      PARENTS[id]=[pa??null, pb??null];
+      let a,b,fin=null;
+      if(rd==="R32"){ a=M[id].team_a||null; b=M[id].team_b||null; if(M[id].status==="FINISHED") fin=M[id]; }
+      else { const [pa,pb]=FEEDERS[id]||[]; a=info[pa]?info[pa].winner:null; b=info[pb]?info[pb].winner:null; fin=finishedFor(rd,a,b); }
+      let winner=fin?actualWinner(fin):null;
+      if(!winner){ const uw=userWin[id]; if(uw&&(uw===a||uw===b)) winner=uw; }
+      let sa=null,sb=null;
+      if(fin){ if(fin.team_a===a){ sa=fin.score_a; sb=fin.score_b; } else { sa=fin.score_b; sb=fin.score_a; } }
+      info[id]={a,b,winner,finished:!!fin,sa,sb};
     });
   });
-  const minLeaf={};
-  (R.R32||[]).forEach((id,i)=>minLeaf[id]=i);
-  ["R16","QF"].forEach(rd=>(R[rd]||[]).forEach(id=>{
-    const [a,b]=PARENTS[id]||[]; minLeaf[id]=Math.min(a!=null?minLeaf[a]:1e9, b!=null?minLeaf[b]:1e9);
-  }));
-  // SF/Final carry no ESPN labels — derive them by pairing the previous round in bracket order
-  const qf=(R.QF||[]).slice().sort((a,b)=>minLeaf[a]-minLeaf[b]);
-  (R.SF||[]).forEach((id,i)=>{ const a=qf[2*i], b=qf[2*i+1]; PARENTS[id]=[a??null,b??null];
-    minLeaf[id]=Math.min(a!=null?minLeaf[a]:1e9, b!=null?minLeaf[b]:1e9); });
-  const sf=(R.SF||[]).slice().sort((a,b)=>minLeaf[a]-minLeaf[b]);
-  (R.Final||[]).forEach((id,i)=>{ PARENTS[id]=[sf[2*i]??null, sf[2*i+1]??null]; minLeaf[id]=0; });
-  // display order: walk down from the Final so every match sits between its two feeders
-  DISPLAY={Final:(R.Final||[]).slice().sort((a,b)=>minLeaf[a]-minLeaf[b])};
-  ["Final","SF","QF","R16"].forEach(rd=>{
-    const arr=[]; (DISPLAY[rd]||[]).forEach(id=>{ const pp=PARENTS[id]||[]; if(pp[0]!=null)arr.push(pp[0]); if(pp[1]!=null)arr.push(pp[1]); });
-    DISPLAY[PREV[rd]]=arr;
-  });
-  ROUNDS.forEach(rd=>{ const seen=new Set(), arr=[];
-    (DISPLAY[rd]||[]).forEach(id=>{ if(id!=null&&!seen.has(id)){seen.add(id);arr.push(id);} });
-    (R[rd]||[]).slice().sort((a,b)=>(minLeaf[a]??1e9)-(minLeaf[b]??1e9)).forEach(id=>{ if(!seen.has(id)){seen.add(id);arr.push(id);} });
-    DISPLAY[rd]=arr;
-  });
+  return info;
 }
-// resolve one side of a match: a real team, a slot that already names a team, or the feeder's winner
-function sideTeam(m, s, part){
-  const t = s===0 ? m.team_a : m.team_b; if(t) return t;
-  const sv = s===0 ? m.slot_a : m.slot_b; if(slotTeamName(sv)) return sv;
-  const p = (PARENTS[m.id]||[])[s]; if(p!=null) return winnerOf(p, part);
-  return null;
-}
-function resolveParticipants(){
-  const part={};
-  ROUNDS.forEach(rd=>{ (R[rd]||[]).forEach(id=>{ const m=M[id]; part[id]=[sideTeam(m,0,part), sideTeam(m,1,part)]; }); });
-  return part;
-}
-function winnerOf(pid, part){
-  if(pid==null) return null;
-  const m=M[pid]; if(!m) return null;
-  const aw=actualWinner(m); if(aw) return aw;
-  const uw=userWin[pid];
-  const ps=part[pid]||[];
-  return (uw && ps.includes(uw)) ? uw : null;   // drop stale picks if participant changed
-}
-
-function roundsReached(part){
-  // team -> number of KO rounds reached in current scenario
+function reachFrom(info){
   const reach={};
-  // base: appearing in an R32 match = reached R32
-  (R.R32||[]).forEach(id=>part[id].forEach(t=>{ if(t) reach[t]=Math.max(reach[t]||0,1); }));
-  // each win advances one round
-  ROUNDS.forEach((rd,ri)=>{
-    (R[rd]||[]).forEach(id=>{
-      const m=M[id]; const aw=actualWinner(m); const w=aw||((userWin[id]&&part[id].includes(userWin[id]))?userWin[id]:null);
-      if(w) reach[w]=Math.max(reach[w]||0, ri+2);  // win R32(ri0)->reached R16(2) ... win Final(ri4)->champion(6)
-    });
-  });
+  ROUNDS.forEach((rd,ri)=>{ (R[rd]||[]).forEach(id=>{ const x=info[id];
+    [x.a,x.b].forEach(t=>{ if(t) reach[t]=Math.max(reach[t]||0, ri+1); });
+    if(x.winner) reach[x.winner]=Math.max(reach[x.winner]||0, ri+2);
+  }); });
   return reach;
 }
-
-function computeStandings(part){
-  const reach=roundsReached(part);
-  const rows=STAND.map(p=>{
-    let tot=0, ko=0;
-    p.teams.forEach(t=>{ const g=GROUPONLY[t.team]||0; const k=4*(reach[t.team]||0); tot+=g+k; ko+=k; });
-    return {name:p.name, total:tot, ko, cur:CURTOTAL[p.name]||0};
-  }).sort((a,b)=>b.total-a.total);
-  return rows;
-}
-
-function champion(part){
-  const f=R.Final&&R.Final[0]; if(!f) return null;
-  const m=M[f]; const aw=actualWinner(m);
-  return aw||((userWin[f]&&part[f].includes(userWin[f]))?userWin[f]:null);
+function computeStandings(reach){
+  return STAND.map(p=>{ let tot=0, ko=0;
+    p.teams.forEach(t=>{ const g=GROUPONLY[t.team]||0, k=4*(reach[t.team]||0); tot+=g+k; ko+=k; });
+    return {name:p.name, total:tot, ko}; }).sort((a,b)=>b.total-a.total);
 }
 
 function render(){
-  const part=resolveParticipants();
-  // scenario standings
-  const rows=computeStandings(part); const champ=champion(part);
-  const lead=rows[0];
-  let sc=`<div class="scen-h">Projected standings — your scenario${champ?` · 🏆 <b>${esc(champ)}</b> win it all`:""}</div>`;
-  sc+=`<div class="scen-rows">`;
-  rows.forEach((r,i)=>{
-    const d=r.total-r.cur;
-    sc+=`<div class="scen-row${i===0?' lead':''}"><span class="srank">${i+1}</span>`+
-        `<span class="sname">${esc(r.name)}</span>`+
-        `<span class="sko">+${r.ko} KO</span>`+
-        `<span class="stot">${r.total}<small> pts</small></span></div>`;
-  });
-  sc+=`</div>`;
-  document.getElementById("scenario").innerHTML=sc;
+  const info=resolve(), reach=reachFrom(info);
+  let champ=null; Object.keys(reach).forEach(t=>{ if(reach[t]>=6) champ=t; });
+  const rows=computeStandings(reach);
+  let sc=`<div class="scen-h">Projected standings — your scenario${champ?` · 🏆 <b>${esc(champ)}</b> win it all`:""}</div><div class="scen-rows">`;
+  rows.forEach((r,i)=>{ sc+=`<div class="scen-row${i===0?' lead':''}"><span class="srank">${i+1}</span>`+
+    `<span class="sname">${esc(r.name)}</span><span class="sko">+${r.ko} KO</span>`+
+    `<span class="stot">${r.total}<small> pts</small></span></div>`; });
+  sc+=`</div>`; document.getElementById("scenario").innerHTML=sc;
 
-  // note if R32 not seeded yet
-  const seeded=(R.R32||[]).some(id=>M[id].team_a||M[id].team_b);
-  document.getElementById("note").innerHTML = seeded ? "" :
-    `<div class="empty" style="padding:14px">The Round of 32 matchups aren't locked in yet — they'll appear here automatically as the group stage finishes and results sync. You'll be able to click through them then.</div>`;
-
-  // bracket columns
   let html="";
   ROUNDS.forEach(rd=>{
     html+=`<div class="bcol"><div class="bcol-h">${RLABEL[rd]}</div>`;
     (DISPLAY[rd]||[]).forEach(id=>{
-      const m=M[id], ps=part[id], aw=actualWinner(m);
-      const w=aw||((userWin[id]&&ps.includes(userWin[id]))?userWin[id]:null);
-      const finished=m.status==="FINISHED";
-      const clickable=!finished && ps[0] && ps[1];
-      html+=`<div class="bmatch${finished?' done':''}${clickable?' live':''}">`;
-      [0,1].forEach(s=>{
-        const t=ps[s];
-        const isW=w&&t===w, isL=w&&t&&t!==w;
-        const sc = finished ? (s===0?m.score_a:m.score_b) : null;
-        const slot = s===0?m.slot_a:m.slot_b;
-        const label = t?esc(t):(slot?esc(slot):"TBD");
-        const own = (t&&OWNER[t])?`<span class="bowner">${esc(OWNER[t])}</span>`:"";
+      const x=info[id], w=x.winner, clickable=!x.finished && x.a && x.b;
+      html+=`<div class="bmatch${x.finished?' done':''}${clickable?' live':''}">`;
+      [["a","sa"],["b","sb"]].forEach(([tk,sk])=>{
+        const t=x[tk], isW=w&&t===w, isL=w&&t&&t!==w, scv=x.finished?x[sk]:null;
+        const own=(t&&OWNER[t])?`<span class="bowner">${esc(OWNER[t])}</span>`:"";
         html+=`<div class="bteam${isW?' win':''}${isL?' lose':''}${(!t)?' tbd':''}"`+
               `${clickable&&t?` data-m="${id}" data-t="${esc(t)}" role="button" tabindex="0"`:""}>`+
-              `${t?flag(t):`<span class="flag flag-tbd"></span>`}<span class="bmeta"><span class="bn">${label}</span>${own}</span>`+
-              `${sc!=null?`<span class="bsc">${sc}</span>`:""}</div>`;
+              `${t?flag(t):`<span class="flag flag-tbd"></span>`}<span class="bmeta"><span class="bn">${t?esc(t):"TBD"}</span>${own}</span>`+
+              `${scv!=null?`<span class="bsc">${scv}</span>`:""}</div>`;
       });
       html+=`</div>`;
     });
     html+=`</div>`;
   });
   document.getElementById("bracket").innerHTML=html;
-
   document.querySelectorAll('.bteam[data-m]').forEach(elm=>{
     const pick=()=>{ userWin[elm.dataset.m]=elm.dataset.t; render(); };
     elm.onclick=pick;
     elm.addEventListener("keydown",e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();pick();} });
   });
 }
-
 function resetPicks(){ userWin={}; render(); }
+
+// display order (bracket order): DFS from the Final so each match sits between its two feeders
+function buildDisplay(){
+  DISPLAY={Final:(R.Final||[]).slice()};
+  const PREV={Final:"SF",SF:"QF",QF:"R16",R16:"R32"};
+  ["Final","SF","QF","R16"].forEach(rd=>{
+    const arr=[]; (DISPLAY[rd]||[]).forEach(id=>{ const f=FEEDERS[id]||[]; if(f[0]!=null)arr.push(f[0]); if(f[1]!=null)arr.push(f[1]); });
+    DISPLAY[PREV[rd]]=arr;
+  });
+  // safety: append any matches not captured, keep only ids we actually have
+  ROUNDS.forEach(rd=>{ const seen=new Set(), out=[];
+    (DISPLAY[rd]||[]).forEach(id=>{ if(M[id]&&!seen.has(id)){seen.add(id);out.push(id);} });
+    (R[rd]||[]).forEach(id=>{ if(!seen.has(id)){seen.add(id);out.push(id);} });
+    DISPLAY[rd]=out; });
+}
 
 async function load(){
   let sched;
   try{ [sched,STAND]=await Promise.all([api("/api/schedule"),api("/api/standings")]); }
   catch(e){ document.getElementById("bracket").innerHTML=`<div class="empty">${e.message}</div>`; return; }
-  // index KO matches
   M={}; R={R32:[],R16:[],QF:[],SF:[],Final:[]};
   sched.forEach(m=>{ if(ROUNDS.includes(m.round)){ M[m.id]=m; R[m.round].push(m.id); } });
-  // order each round by kickoff so positions line up with ESPN's game numbers (used in slot labels)
-  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>{ const ka=M[a].kickoff||"", kb=M[b].kickoff||""; return ka<kb?-1:ka>kb?1:a-b; }));
-  // standings helpers
-  OWNER={}; GROUPONLY={}; CURTOTAL={}; ALLTEAMS=new Set();
+  ROUNDS.forEach(rd=>R[rd].sort((a,b)=>a-b));
+  OWNER={}; GROUPONLY={}; CURTOTAL={};
   STAND.forEach(p=>{ CURTOTAL[p.name]=p.total;
-    p.teams.forEach(t=>{ OWNER[t.team]=p.name; ALLTEAMS.add(t.team);
+    p.teams.forEach(t=>{ OWNER[t.team]=p.name;
       GROUPONLY[t.team]=(t.breakdown||[]).filter(b=>/group/i.test(b.label)).reduce((a,b)=>a+b.points,0); }); });
-  buildBracket();
+  buildDisplay();
   render();
 }
-window.__reload=load;          // refresh real results periodically (keeps finished games current)
+window.__reload=load;
 load();
 </script></body></html>
